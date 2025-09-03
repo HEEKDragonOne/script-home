@@ -1,0 +1,43 @@
+[
+  {
+    "type": "file",
+    "name": "index.md",
+    "label": "介绍"
+  },
+  {
+    "type": "file",
+    "name": "started.md",
+    "label": "快速入门"
+  },
+  {
+    "type": "dir",
+    "name": "concepts",
+    "label": "概念",
+    "collapsed": true
+  },
+  {
+    "type": "dir",
+    "name": "expressions",
+    "label": "表达式",
+    "collapsed": true
+  },
+  {
+    "type": "dir",
+    "name": "Transformations",
+    "label": "变换",
+    "collapsed": true
+  },
+  {
+    "type": "dir",
+    "name": "LazyAPI",
+    "label": "惰性API",
+    "collapsed": true
+  },
+  {
+    "type": "dir",
+    "name": "IO",
+    "label": "输入输出",
+    "collapsed": true
+  }
+]
+

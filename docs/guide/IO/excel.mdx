@@ -1,0 +1,93 @@
+import {Tab, Tabs} from 'rspress/theme';
+import Link from "../../components/Link";
+
+# EXCEL
+
+从性能角度分析, 建议尽量使用其它格式比如Parquet或CSV
+
+## 读取excel
+
+Polars没有原生的Excel读取器, 但是可以使用第三方引擎来解析Excel, 可用的引擎如下:
+
+1. fastexcel: 该引擎基于Rust的calamine, 是迄今为止最快的读取器
+2. xlsx2csv: 此阅读器将.xlsx文件解析为内存中的csv, 然后Polars使用其自己的csv阅读器读取该csv
+3. openpyxl: 通常比xls2csv慢, 但可以为难以解析的文件提供更大的灵活性
+
+我们建议默认使用FastExcel引擎. xlsx2csv和openpyxl引擎速度较慢, 但可能具有更多解析复杂数据的功能
+
+
+下面以使用fastexcel为例, 首先安装fastexcel
+
+<Tabs>
+  <Tab label="uv">
+      ```shell
+      uv add fastexcel
+      ```
+  </Tab>
+  <Tab label="pip">
+      ```shell
+      pip install fastexcel
+      ```
+  </Tab>
+</Tabs>
+
+<Link
+    href="/read_excel.xlsx"
+    description={"read_excel.xlsx"}
+/>
+
+```python
+import polars as pl
+
+df = pl.read_excel("read_excel.xlsx", sheet_name="Sheet2")
+print(df)
+```
+```text
+shape: (3, 2)
+┌──────┬───────┐
+│ foo2 ┆ bar2  │
+│ ---  ┆ ---   │
+│ i64  ┆ str   │
+╞══════╪═══════╡
+│ 1    ┆ one   │
+│ 2    ┆ two   │
+│ 3    ┆ three │
+└──────┴───────┘
+```
+
+:::TIP
+注意这里我们可以通过`sheet_name`指定要读取哪个sheet, 默认为第一个sheet, 如果想查看有哪些sheet, 可以使用参照下面的代码
+:::
+
+```python
+import fastexcel as fe
+
+e = fe.read_excel("read_excel.xlsx")
+
+e.sheet_names
+```
+
+```text
+['Sheet1', 'Sheet2']
+```
+
+## 写入excel
+使用`write_excel`写入excel, 可以通过worksheet指定工作表的名称
+
+<Tabs>
+  <Tab label="uv">`uv install xlsxwriter`</Tab>
+  <Tab label="pip">`pip install xlsxwriter`</Tab>
+</Tabs>
+
+```python
+import polars as pl
+
+df = pl.DataFrame({
+	"foo":[1,2,3],
+	"bar":["None","bak","baz"]
+})
+df.write_excel("write_excel.xlsx",worksheet="write_by_xlsxwriter")
+```
+
+
+Polars可以创建具有多个工作表和格式丰富的Excel文件, 更多详情, 可以参阅`write_excel`的文档

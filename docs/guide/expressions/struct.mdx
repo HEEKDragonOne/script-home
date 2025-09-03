@@ -1,0 +1,268 @@
+# 结构体
+
+数据类型`Struct`是一种复合类型, 可以在单个列中存储多个字段
+
+这一章节中我们会解释为什么要有`Struct`, 以及如何处理`Struct`类型的值
+
+
+我们有一个DataFrame, 显示了美国一些州的几部电影的平均分
+```python
+import polars as pl
+
+ratings = pl.DataFrame(
+    {
+        "Movie": ["Cars", "IT", "ET", "Cars", "Up", "IT", "Cars", "ET", "Up", "Cars"],
+        "Theatre": ["NE", "ME", "IL", "ND", "NE", "SD", "NE", "IL", "IL", "NE"],
+        "Avg_Rating": [4.5, 4.4, 4.6, 4.3, 4.8, 4.7, 4.5, 4.9, 4.7, 4.6],
+        "Count": [30, 27, 26, 29, 31, 28, 28, 26, 33, 28],
+    }
+)
+print(ratings)
+```
+
+```text
+shape: (10, 4)
+┌───────┬─────────┬────────────┬───────┐
+│ Movie ┆ Theatre ┆ Avg_Rating ┆ Count │
+│ ---   ┆ ---     ┆ ---        ┆ ---   │
+│ str   ┆ str     ┆ f64        ┆ i64   │
+╞═══════╪═════════╪════════════╪═══════╡
+│ Cars  ┆ NE      ┆ 4.5        ┆ 30    │
+│ IT    ┆ ME      ┆ 4.4        ┆ 27    │
+│ ET    ┆ IL      ┆ 4.6        ┆ 26    │
+│ Cars  ┆ ND      ┆ 4.3        ┆ 29    │
+│ Up    ┆ NE      ┆ 4.8        ┆ 31    │
+│ IT    ┆ SD      ┆ 4.7        ┆ 28    │
+│ Cars  ┆ NE      ┆ 4.5        ┆ 28    │
+│ ET    ┆ IL      ┆ 4.9        ┆ 26    │
+│ Up    ┆ IL      ┆ 4.7        ┆ 33    │
+│ Cars  ┆ NE      ┆ 4.6        ┆ 28    │
+└───────┴─────────┴────────────┴───────┘
+```
+
+## 何时遇到`Struct`
+
+在下面的代码中, 我们统计了每个 Theatre 的电影数量, 观察下返回结果, 此时只输出了一列, 类型为`struct[2]`
+```python
+result = ratings.select(pl.col("Theatre").value_counts(sort=True))
+print(result)
+```
+
+```text
+shape: (5, 1)
+┌───────────┐
+│ Theatre   │
+│ ---       │
+│ struct[2] │
+╞═══════════╡
+│ {"NE",4}  │
+│ {"IL",3}  │
+│ {"ME",1}  │
+│ {"ND",1}  │
+│ {"SD",1}  │
+└───────────┘
+```
+
+如果我们想看到之前更熟悉的那种输出, 可以使用`unnest`, `unnest`将结构列分解为每个字段的单独列, 会插入一个新的列, 可以看到多了一列"count"
+
+```python
+result = ratings.select(pl.col("Theatre").value_counts(sort=True)).unnest("Theatre")
+print(result)
+```
+
+```text
+
+shape: (5, 2)
+┌─────────┬───────┐
+│ Theatre ┆ count │
+│ ---     ┆ ---   │
+│ str     ┆ u32   │
+╞═════════╪═══════╡
+│ NE      ┆ 4     │
+│ IL      ┆ 3     │
+│ ME      ┆ 1     │
+│ ND      ┆ 1     │
+│ SD      ┆ 1     │
+└─────────┴───────┘
+```
+
+:::note {title=为什么value_counts返回Struct}
+
+Polars表达式使用作用于单个Series, 并返回另一个`Series`. `Struct`是一种数据类型, 允许我们将多列作为表达式输入, 或从表达式中输出多列.
+:::
+
+## 从字典推断数据类型
+
+当构建`Series`或`DataFrame`时, Polars会将字典转换为数据类型`Struct`
+
+```python
+rating_series = pl.Series(
+    "ratings",
+    [
+        {"Movie": "Cars", "Theatre": "NE", "Avg_Rating": 4.5},
+        {"Movie": "Toy Story", "Theatre": "ME", "Avg_Rating": 4.9},
+    ],
+)
+print(rating_series)
+```
+
+```text
+shape: (2,)
+Series: 'ratings' [struct[3]]
+[
+    {"Cars","NE",4.5}
+    {"Toy Story","ME",4.9}
+]
+```
+字段数量, 名称和类型是根据第一个看到的字典推断出来的. 后续的不一致可能会导致`null`值或错误
+
+```python
+null_rating_series = pl.Series(
+    "ratings",
+    [
+        {"Movie": "Cars", "Theatre": "NE", "Avg_Rating": 4.5},
+        {"Mov": "Toy Story", "Theatre": "ME", "Avg_Rating": 4.9},
+        {"Movie": "Snow White", "Theatre": "IL", "Avg_Rating": "4.7"},
+    ],
+    strict=False,  # To show the final structs with `null` values.
+)
+print(null_rating_series)
+```
+```text
+shape: (3,)
+Series: 'ratings' [struct[4]]
+[
+    {"Cars","NE","4.5",null}
+    {null,"ME","4.9","Toy Story"}
+    {"Snow White","IL","4.7",null}
+]
+```
+
+## 提取结构体的三个值
+我们可以使用函数`field`来从中获取字段
+
+```python
+result = rating_series.struct.field("Movie")
+print(result)
+```
+
+```text
+shape: (2,)
+Series: 'Movie' [str]
+[
+    "Cars"
+    "Toy Story"
+]
+```
+
+## 重命名`Struct`中的字段
+我们可以使用`rename_fields`方法重命名字段
+```python
+import polars as pl
+
+s = pl.Series([{"a": 1, "b": 2}, {"a": 3, "b": 4}])
+print(s.struct.fields)
+s = s.struct.rename_fields(["c", "d"])
+print(s.struct.fields)
+```
+可以看到初始字段是`a`和`b`, 重命名之后是`c`和`d`
+```text
+['a', 'b']
+['c', 'd']
+```
+
+## `Struct`的实际用例
+
+### 识别重复行
+
+我们可以识别"电影"和"剧院"存在重复的情况
+
+``` python
+import polars as pl
+
+ratings = pl.DataFrame(
+    {
+        "Movie": ["Cars", "IT", "ET", "Cars", "Up", "IT", "Cars", "ET", "Up", "Cars"],
+        "Theatre": ["NE", "ME", "IL", "ND", "NE", "SD", "NE", "IL", "IL", "NE"],
+        "Avg_Rating": [4.5, 4.4, 4.6, 4.3, 4.8, 4.7, 4.5, 4.9, 4.7, 4.6],
+        "Count": [30, 27, 26, 29, 31, 28, 28, 26, 33, 28],
+    }
+)
+result = ratings.filter(pl.struct("Movie", "Theatre").is_duplicated())
+print(result)
+```
+仔细观察结果, 上述数据中, 存在多个Cars+NE, ET+IL, `is_duplicated`返回的是组合成的`Struct`重复的行
+```text
+shape: (5, 4)
+┌───────┬─────────┬────────────┬───────┐
+│ Movie ┆ Theatre ┆ Avg_Rating ┆ Count │
+│ ---   ┆ ---     ┆ ---        ┆ ---   │
+│ str   ┆ str     ┆ f64        ┆ i64   │
+╞═══════╪═════════╪════════════╪═══════╡
+│ Cars  ┆ NE      ┆ 4.5        ┆ 30    │
+│ ET    ┆ IL      ┆ 4.6        ┆ 26    │
+│ Cars  ┆ NE      ┆ 4.5        ┆ 28    │
+│ ET    ┆ IL      ┆ 4.9        ┆ 26    │
+│ Cars  ┆ NE      ┆ 4.6        ┆ 28    │
+└───────┴─────────┴────────────┴───────┘
+```
+当然也可以来识别独特的案例, 可以使用`is_unique`
+
+### 多列排名
+
+假设已知存在重复项, 我们想选择哪个评分具有更高的优先级. 我们假设`Count`这一列更重要, 如果`Count`列相同, 那么再考虑`Avg_Rating`
+
+```python
+# 先增加一列"Rank", 然后再过滤
+result = ratings.with_columns(
+    pl.struct("Count", "Avg_Rating")
+        .rank("dense", descending=True)
+        .over("Movie", "Theatre")
+        .alias("Rank")
+    ).filter(pl.struct("Movie", "Theatre").is_duplicated())
+
+print(result)
+```
+有关`rank`的详细信息, 可以查看后面的[窗口函数部分](./window_function.mdx)
+```text
+shape: (5, 5)
+┌───────┬─────────┬────────────┬───────┬──────┐
+│ Movie ┆ Theatre ┆ Avg_Rating ┆ Count ┆ Rank │
+│ ---   ┆ ---     ┆ ---        ┆ ---   ┆ ---  │
+│ str   ┆ str     ┆ f64        ┆ i64   ┆ u32  │
+╞═══════╪═════════╪════════════╪═══════╪══════╡
+│ Cars  ┆ NE      ┆ 4.5        ┆ 30    ┆ 1    │
+│ ET    ┆ IL      ┆ 4.6        ┆ 26    ┆ 2    │
+│ Cars  ┆ NE      ┆ 4.5        ┆ 28    ┆ 3    │
+│ ET    ┆ IL      ┆ 4.9        ┆ 26    ┆ 1    │
+│ Cars  ┆ NE      ┆ 4.6        ┆ 28    ┆ 2    │
+└───────┴─────────┴────────────┴───────┴──────┘
+```
+
+### 在单个表达式中使用多个列
+当我们想将多列作为表达式的输入的时候, `Struct`也很有用. 我们可以使用`map_ elements`
+
+:::info
+
+下面的add只是一个非常简单的示例, 实际上这个场景是一些稍微复杂的计算, 无法直接使用表达式来计算的,
+比如无法通过`pl.col("m")+pl.col("n")`就能实现的
+:::
+
+```python
+def add(a: int, b: int)-> int:
+    return a+b
+
+values = pl.DataFrame(
+    {
+        "m": [0, 0, 0, 1, 1, 1, 2],
+        "n": [2, 3, 4, 1, 2, 3, 1],
+    }
+)
+result = values.with_columns(
+    pl.struct(["m", "n"])
+        .map_elements(function=lambda s: add(s["m"], s["n"]), return_dtype=pl.Int64)
+        .alias("add")
+)
+
+print(result)
+```

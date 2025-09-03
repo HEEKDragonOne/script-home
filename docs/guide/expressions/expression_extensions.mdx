@@ -1,0 +1,612 @@
+# 表达式扩展
+
+表达式扩展是一项功能, 能够编写一个可以扩展为多个不同表达式的表达式, 这可能取决于上下文
+
+下面来展示一下如何使用
+
+## 数据准备
+
+```python
+import polars as pl
+import polars.selectors as cs
+
+df = pl.DataFrame(
+    {
+        "name":["n1","n2","n3","n4"],
+        "v1":[1,2,3,4],
+        "v2":[5,6,7,8],
+        "v3":[1.1,2.2,3.3,4.4],
+    },
+    schema={"name":pl.String,"v1":pl.UInt16,"v2":pl.Int32,"v3":pl.Float32}
+
+)
+
+print(df)
+```
+
+```text
+shape: (4, 4)
+┌──────┬─────┬─────┬─────┐
+│ name ┆ v1  ┆ v2  ┆ v3  │
+│ ---  ┆ --- ┆ --- ┆ --- │
+│ str  ┆ u16 ┆ i32 ┆ f32 │
+╞══════╪═════╪═════╪═════╡
+│ n1   ┆ 1   ┆ 5   ┆ 1.1 │
+│ n2   ┆ 2   ┆ 6   ┆ 2.2 │
+│ n3   ┆ 3   ┆ 7   ┆ 3.3 │
+│ n4   ┆ 4   ┆ 8   ┆ 4.4 │
+└──────┴─────┴─────┴─────┘
+```
+
+
+## `col`函数
+
+> `col`函数用来引用(表示) `DataFrame` 中的一列
+
+向col函数提供多个列名时, 会发生最简单的表达式扩展形式
+
+### 按列名显式扩展
+> 对列名为"v1"和"v2"使用扩展, 每列的值+10
+
+#### 单个列名无扩展
+```python
+res = df.select(
+    pl.col("v1")+10,
+    pl.col("v2")+10
+)
+
+print(res)
+```
+```text
+shape: (4, 2)
+┌─────┬─────┐
+│ v1  ┆ v2  │
+│ --- ┆ --- │
+│ i64 ┆ i64 │
+╞═════╪═════╡
+│ 11  ┆ 15  │
+│ 12  ┆ 16  │
+│ 13  ┆ 17  │
+│ 14  ┆ 18  │
+└─────┴─────┘
+```
+
+#### 传递多个列名进行扩展
+```python
+res = df.select(
+    pl.col("v1","v2")+10
+)
+
+print(res)
+```
+
+```text
+shape: (4, 2)
+┌─────┬─────┐
+│ v1  ┆ v2  │
+│ --- ┆ --- │
+│ u16 ┆ i32 │
+╞═════╪═════╡
+│ 11  ┆ 15  │
+│ 12  ┆ 16  │
+│ 13  ┆ 17  │
+│ 14  ┆ 18  │
+└─────┴─────┘
+```
+
+### 按数据类型扩展
+> 向`col`函数传递`Polars`的数据类型
+
+```python
+# 所有数据类型为Int32的列的值+100
+res = df.select(
+    pl.col(pl.Int32)+100
+)
+print(res)
+```
+
+```text
+shape: (4, 1)
+┌─────┐
+│ v2  │
+│ --- │
+│ i32 │
+╞═════╡
+│ 105 │
+│ 106 │
+│ 107 │
+│ 108 │
+└─────┘
+```
+
+### 通过模式匹配进行扩展
+
+可以使用**正则表达式**来指定用于匹配列名的模式
+
+为了区分常规列名和通过模式匹配扩展的列名, 正则表达式以`^`开头, 以`$`结尾, 正则表达式可以与常规列名混合使用
+
+```python
+df.select(
+    pl.col("name","^v[0-9]$")
+)
+```
+name这一列使用常规列名, v1和v2使用正则表达式进行扩展, `^v[0-9]$` 表示"v开头, 数字0-9结尾", 正好可以匹配到v1和v2
+
+```text
+shape: (4, 4)
+┌──────┬─────┬─────┬─────┐
+│ name ┆ v1  ┆ v2  ┆ v3  │
+│ ---  ┆ --- ┆ --- ┆ --- │
+│ str  ┆ u16 ┆ i32 ┆ f32 │
+╞══════╪═════╪═════╪═════╡
+│ n1   ┆ 1   ┆ 5   ┆ 1.1 │
+│ n2   ┆ 2   ┆ 6   ┆ 2.2 │
+│ n3   ┆ 3   ┆ 7   ┆ 3.3 │
+│ n4   ┆ 4   ┆ 8   ┆ 4.4 │
+└──────┴─────┴─────┴─────┘
+```
+
+### 参数中不能同时有列名和数据类型
+
+## 选择所有列
+
+> `pl.all()`是pl.col("*")的语法糖, 不过all语义化更强, 所以推荐使用all
+
+```python
+df.select(pl.all())
+```
+
+```text
+shape: (4, 4)
+┌──────┬─────┬─────┬─────┐
+│ name ┆ v1  ┆ v2  ┆ v3  │
+│ ---  ┆ --- ┆ --- ┆ --- │
+│ str  ┆ u16 ┆ i32 ┆ f32 │
+╞══════╪═════╪═════╪═════╡
+│ n1   ┆ 1   ┆ 5   ┆ 1.1 │
+│ n2   ┆ 2   ┆ 6   ┆ 2.2 │
+│ n3   ┆ 3   ┆ 7   ┆ 3.3 │
+│ n4   ┆ 4   ┆ 8   ┆ 4.4 │
+└──────┴─────┴─────┴─────┘
+```
+
+## 排除列
+
+### 选择所有列, 但排除某些列
+
+`Polars`提供了一种从表达式扩展中排除某些列的机制, 可以使用`exclude`, 接收与`col`完全相同类型的参数
+
+```python
+res = df.select(
+    pl.all().exclude("name","^v[1]$")
+)
+print(res)
+
+```
+选择所有列, 但排除列名"name"和列名"v1"的列
+```text
+shape: (4, 2)
+┌─────┬─────┐
+│ v2  ┆ v3  │
+│ --- ┆ --- │
+│ i32 ┆ f32 │
+╞═════╪═════╡
+│ 5   ┆ 1.1 │
+│ 6   ┆ 2.2 │
+│ 7   ┆ 3.3 │
+│ 8   ┆ 4.4 │
+└─────┴─────┘
+```
+
+### 只排除某些列
+
+`select`上下文默认选择所有列, 可以使用`pl.exclude()`来排除某些列
+
+```python
+# 排除name这一列
+res = df.select(
+    pl.exclude("name")
+)
+print(res)
+```
+
+```text
+shape: (4, 3)
+┌─────┬─────┬─────┐
+│ v1  ┆ v2  ┆ v3  │
+│ --- ┆ --- ┆ --- │
+│ u16 ┆ i32 ┆ f32 │
+╞═════╪═════╪═════╡
+│ 1   ┆ 5   ┆ 1.1 │
+│ 2   ┆ 6   ┆ 2.2 │
+│ 3   ┆ 7   ┆ 3.3 │
+│ 4   ┆ 8   ┆ 4.4 │
+└─────┴─────┴─────┘
+```
+
+## 对列重命名
+
+默认情况下, 讲表达式应用于列时, 其结果列名保持不变, 这可能会导致错误, 我们来看代码
+
+```python {4,5}
+from polars.exceptions import DuplicateError
+try:
+    res = df.select(
+        pl.col("v1")+1,
+        pl.col("v1")+2,
+    )
+except DuplicateError as err:
+    print("column name duplicate error: ", err)
+```
+
+```text
+column name duplicate error:  the name 'v1' is duplicate
+
+It's possible that multiple expressions are returning the same default column name.
+
+If this is the case, try renaming the columns with `.alias("new_name")` to avoid duplicate column names.
+```
+
+上面的错误提示非常清晰, 提示我们`v1`重复了, 然后如果是这种情况, 考虑使用`.alias()`来重命名列, 来看下面的解决办法
+
+### 使用别名重命名单个列
+
+> 使用`.alias()`来重命名列, 但是`.alias()`不能应用于表达式扩展, 因为`.alias()`被设计用于单个列
+
+```python
+res = df.select(
+    (pl.col("v1")+1).alias("v1+1"),
+    (pl.col("v1")+2).alias("v1+2"),
+)
+print(res)
+```
+
+```text
+shape: (4, 2)
+┌──────┬──────┐
+│ v1+1 ┆ v1+2 │
+│ ---  ┆ ---  │
+│ u16  ┆ u16  │
+╞══════╪══════╡
+│ 2    ┆ 3    │
+│ 3    ┆ 4    │
+│ 4    ┆ 5    │
+│ 5    ┆ 6    │
+└──────┴──────┘
+```
+
+### 为列名添加前缀和后缀
+
+使用`.prefix()`和`.suffix()`来为列名添加前缀和后缀
+
+```python
+# 通过name属性的方法, 可以增加前缀或后缀
+res = df.select(
+    (pl.col("v1")+1).name.prefix("add_1_"),
+    (pl.col("v1")+2).name.suffix("_add_2"),
+)
+print(res)
+```
+
+```text
+shape: (4, 2)
+┌──────────┬──────────┐
+│ add_1_v1 ┆ v1_add_2 │
+│ ---      ┆ ---      │
+│ u16      ┆ u16      │
+╞══════════╪══════════╡
+│ 2        ┆ 3        │
+│ 3        ┆ 4        │
+│ 4        ┆ 5        │
+│ 5        ┆ 6        │
+└──────────┴──────────┘
+```
+
+### 动态名称替换
+
+如果以上都不能满足需求, 命名空间name还提供了`map`方法, 该方法接收一个`函数`, 该`函数`接受旧的列名返回新的列名
+
+下面的例子展示了如何使用`map`方法, 我们对`v1`使用了自定义函数, `v2`使用了标准库函数`str.upper`
+```python
+def new_name_example(old_name:str) -> str:
+    return old_name+old_name
+
+res = df.select(
+    pl.col("v1").name.map(new_name_example),
+    pl.col("v2").name.map(str.upper)
+)
+
+print(res)
+```
+
+```text
+shape: (4, 2)
+┌──────┬─────┐
+│ v1v1 ┆ V2  │
+│ ---  ┆ --- │
+│ u16  ┆ i32 │
+╞══════╪═════╡
+│ 1    ┆ 5   │
+│ 2    ┆ 6   │
+│ 3    ┆ 7   │
+│ 4    ┆ 8   │
+└──────┴─────┘
+```
+
+## 以编程的方式生成表达式(动态生成)
+
+如果需求稍微有些复杂, 可以使用动态生成表达式的方式来实现自己的需求, 我们这里使用简单的示例进行演示
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+import {Tab, Tabs} from 'rspress/theme';
+import {LinkCard} from '@theme';
+
+<Tabs>
+    <Tab label={"官方示例"}>
+        ```python
+        def gen_expr(l: list[int]):
+            for x in l:
+                yield pl.col(f"v{x}")
+        res = df.select(gen_expr([1,2]))
+        print(res)
+        ```
+    </Tab>
+    <Tab label={"更直观的示例"}>
+        ```python
+        col_list: list[pl.Expr] = []
+        for x in [1,2]:
+            col_list.append(pl.col(f"v{x}"))
+        res = df.select(col_list)
+        print(res)
+        ```
+    </Tab>
+</Tabs>
+
+```text
+shape: (4, 2)
+┌─────┬─────┐
+│ v1  ┆ v2  │
+│ --- ┆ --- │
+│ u16 ┆ i32 │
+╞═════╪═════╡
+│ 1   ┆ 5   │
+│ 2   ┆ 6   │
+│ 3   ┆ 7   │
+│ 4   ┆ 8   │
+└─────┴─────┘
+```
+
+
+## 更灵活的列选择
+
+`Polars`附带子模块, `selectors`模块提供了许多函数, 允许编写更灵活的列表达式扩展
+
+可以根据类型选择列, 也可以根据模式选择列
+
+### 选择所有字符串列和模式选择
+使用string()函数和ends_with()函数选择所有字符串列或者以"me"结尾的列
+
+同理还有`start_with()`等实用函数
+
+```python
+import polars.selectors as cs
+
+res = df.select(cs.string()|cs.ends_with("me"))
+
+print(res)
+```
+
+```text
+shape: (4, 1)
+┌──────┐
+│ name │
+│ ---  │
+│ str  │
+╞══════╡
+│ n1   │
+│ n2   │
+│ n3   │
+│ n4   │
+└──────┘
+```
+
+### 选择所有的数值列
+使用`numeric()`函数选择所有的数值列, 无论是整数还是浮点数, 省去我们通过col手动指定了
+```python
+# 通过schema显式指定类型
+res = df.select(cs.numeric())
+
+print(res)
+```
+```text
+shape: (4, 3)
+┌─────┬─────┬─────┐
+│ v1  ┆ v2  ┆ v3  │
+│ --- ┆ --- ┆ --- │
+│ u16 ┆ i32 ┆ f32 │
+╞═════╪═════╪═════╡
+│ 1   ┆ 5   ┆ 1.1 │
+│ 2   ┆ 6   ┆ 2.2 │
+│ 3   ┆ 7   ┆ 3.3 │
+│ 4   ┆ 8   ┆ 4.4 │
+└─────┴─────┴─────┘
+```
+
+### 将选择器与集合操作组合
+
+#### `A-B`: 只在A不在B中, 集合的差集
+
+选择所有包含"v"的列, 但是排除所有浮点数列, 结果为v1和v2列
+
+```python
+res = df.select(cs.contains("v")-cs.float())
+
+print(res)
+```
+```text
+shape: (4, 2)
+┌─────┬─────┐
+│ v1  ┆ v2  │
+│ --- ┆ --- │
+│ u16 ┆ i32 │
+╞═════╪═════╡
+│ 1   ┆ 5   │
+│ 2   ┆ 6   │
+│ 3   ┆ 7   │
+│ 4   ┆ 8   │
+└─────┴─────┘
+```
+
+#### `A|B`: 满足表达式A或者B的列, 集合的并集
+
+```python
+res = df.select(cs.string() | cs.float())
+print(res)
+```
+
+```text
+shape: (4, 2)
+┌──────┬─────┐
+│ name ┆ v3  │
+│ ---  ┆ --- │
+│ str  ┆ f32 │
+╞══════╪═════╡
+│ n1   ┆ 1.1 │
+│ n2   ┆ 2.2 │
+│ n3   ┆ 3.3 │
+│ n4   ┆ 4.4 │
+└──────┴─────┘
+```
+
+
+#### `A&B`: 满足表达式A和B的列, 集合的交集
+
+选择包含"v"并且是整数的列(排除了浮点数)
+```python
+res = df.select(cs.contains("v") & cs.integer())
+print(res)
+```
+```text
+
+```
+
+#### `~A`: 集合的补集
+
+```python
+res = df.select(~cs.integer())
+print(res)
+```
+
+```text
+shape: (4, 2)
+┌──────┬─────┐
+│ name ┆ v3  │
+│ ---  ┆ --- │
+│ str  ┆ f32 │
+╞══════╪═════╡
+│ n1   ┆ 1.1 │
+│ n2   ┆ 2.2 │
+│ n3   ┆ 3.3 │
+│ n4   ┆ 4.4 │
+└──────┴─────┘
+```
+
+
+
+### 解决运算符歧义
+`~`符号针对布尔表达式含义是取反, 针对选择器是取补集, 为了解决歧义, 可以使用方法: `as_expr`, 看下面官方代码
+
+我们想把所有以"has"开头的列的值取反, 但结果是选择了所有不以"has"开头的列
+
+```python {13}
+import polars as pl
+import polars.selectors as cs
+people = pl.DataFrame(
+    {
+        "name": ["Anna", "Bob"],
+        "has_partner": [True, False],
+        "has_kids": [False, False],
+        "has_tattoos": [True, False],
+        "is_alive": [True, True],
+    }
+)
+
+wrong_result = people.select((~cs.starts_with("has_")))
+print(wrong_result)
+```
+
+```text
+shape: (2, 2)
+┌──────┬──────────┐
+│ name ┆ is_alive │
+│ ---  ┆ ---      │
+│ str  ┆ bool     │
+╞══════╪══════════╡
+│ Anna ┆ true     │
+│ Bob  ┆ true     │
+└──────┴──────────┘
+```
+
+正确的写法是使用`as_expr()`方法, `as_expr`方法将选择器转换为表达式, 然后取反, 我们看下面代码
+
+```python
+res = people.select((~cs.starts_with("has_").as_expr()))
+print(res)
+```
+可以细致对比一下结果, 是否按照我们的预期, 针对布尔值进行取反了
+```text
+shape: (2, 3)
+┌─────────────┬──────────┬─────────────┐
+│ has_partner ┆ has_kids ┆ has_tattoos │
+│ ---         ┆ ---      ┆ ---         │
+│ bool        ┆ bool     ┆ bool        │
+╞═════════════╪══════════╪═════════════╡
+│ false       ┆ true     ┆ false       │
+│ true        ┆ true     ┆ true        │
+└─────────────┴──────────┴─────────────┘
+```
+
+### 调试选择器
+
+当不确定是否有一个Polars选择器时, 可以使用函数: `cs.is_selector`来检测
+
+`print(cs.is_selector(~cs.starts_with("has_").as_expr()))` : `False`
+`print(cs.is_selector(~cs.starts_with("has_")))`: `True`, 这是一个选择器
+
+另一个有用的调试器函数是: `expand_selector`, 对于给定的目标`DataFrame`或者选择器, 可以检查扩展为哪些列
+
+```python
+print(
+    cs.expand_selector(
+        people,
+        cs.starts_with("has_"),
+    )
+)
+```
+`('has_partner', 'has_kids', 'has_tattoos')`
+
+### 完整参考
+
+<LinkCard
+    href={"https://docs.pola.rs/user-guide/expressions/expression-expansion/#complete-reference"}
+    description={"详见官方文档"}
+/>

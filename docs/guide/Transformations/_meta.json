@@ -1,0 +1,27 @@
+[
+  {
+    "type": "file",
+    "name": "join.mdx",
+    "label": "连接"
+  },
+  {
+    "type": "file",
+    "name": "concatenation.mdx",
+    "label": "拼接"
+  },
+  {
+    "type": "file",
+    "name": "pivot.mdx",
+    "label": "透视"
+  },
+  {
+    "type": "file",
+    "name": "unpivot.mdx",
+    "label": "逆透视"
+  },
+  {
+    "type": "dir",
+    "name": "date_series",
+    "label": "时间序列"
+  }
+]

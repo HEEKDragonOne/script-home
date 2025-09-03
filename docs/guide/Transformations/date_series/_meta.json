@@ -1,0 +1,22 @@
+[
+  {
+    "type": "file",
+    "name": "parse.mdx",
+    "label": "解析"
+  },
+  {
+    "type": "file",
+    "name": "filter.mdx",
+    "label": "过滤"
+  },
+  {
+    "type": "file",
+    "name": "group.mdx",
+    "label": "分组"
+  },
+  {
+    "type": "file",
+    "name": "resampling.mdx",
+    "label": "重采样"
+  }
+]

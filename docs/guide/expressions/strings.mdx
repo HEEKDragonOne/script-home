@@ -1,0 +1,310 @@
+# 字符串
+
+字符串数据是处理`DataFrame`时经常使用的数据类型, 命名空间`str`提供了字符串处理函数
+
+由于字符串的长度不可预测, 在其他`DataFrame`库中使用字符串可能会比较低效. Polars通过遵循Arrow Columnar Format规范来缓解这些问题
+
+## `str`命名空间
+
+处理字符串的数据时,可能需要访问命名空间 `str`, 该命名空间聚合了40多个可用于处理字符串的函数.
+
+下面代码片段展示了如何从该命名空间访问函数, 并展示了如何根据字节数和字符数计算列中字符串的长度
+
+```python {11-13}
+import polars as pl
+
+df = pl.DataFrame(
+    {
+        "language": ["English", "Dutch", "Portuguese","中文"],
+        "fruit": ["pear", "peer", "pêra","苹果"],
+    }
+)
+
+result = df.select(
+    pl.col("fruit"),
+    pl.col("fruit").str.len_bytes().alias("byte_count"),
+    pl.col("fruit").str.len_chars().alias("letter_count"),
+)
+print(result)
+```
+注意到 "苹果" 占用6个字节, 是因为常用汉字占3个字节
+```text
+shape: (4, 3)
+┌───────┬────────────┬──────────────┐
+│ fruit ┆ byte_count ┆ letter_count │
+│ ---   ┆ ---        ┆ ---          │
+│ str   ┆ u32        ┆ u32          │
+╞═══════╪════════════╪══════════════╡
+│ pear  ┆ 4          ┆ 4            │
+│ peer  ┆ 4          ┆ 4            │
+│ pêra  ┆ 5          ┆ 4            │
+│ 苹果  ┆ 6          ┆ 2            │
+└───────┴────────────┴──────────────┘
+```
+
+:::note
+如果确定只处理ASCII文本, 那么字节数和字符数是一样的, 所以建议使用更快的`str.len_bytes()`方法
+:::
+
+
+## 解析字符串
+
+Polars提供了多种方法来检查和解析字符串列中的元素, 例如检查给定的子字符串或模式是否存在, 以及对它们计数, 提取或替换
+
+### 检查是否包含模式
+
+- 使用 `str.contains()` 检查字符串是否包含与模式匹配的子字符串, 子列表是形参参数说明
+    - `pattern`: 一个有效的正则表达式模式
+    - `literal`: 将`pattern`视为文本字符串, 而不是正则表达式
+    - `strict` : 如果底层模式不是有效的正则表达式, 则引发错误, 否则使用`null`值进行覆盖
+- 使用 `str.starts_with()` 检查给定字符串列是否以给定子字符串开头
+- 使用 `str.ends_with()` 检查给定字符串列是否以给定子字符串结尾
+
+```python
+result = df.select(
+    pl.col("fruit"),
+    pl.col("fruit").str.starts_with("p").alias("starts_with_p"), # 以p开头
+    pl.col("fruit").str.ends_with("r").alias("ends_with_r"),     # 以r结尾
+    pl.col("fruit").str.contains("p..r").alias("p..r"),          # "p"和"r"之间可以有任意的两个字符
+    pl.col("fruit").str.contains("e+").alias("e+"),              # 至少出现一个"e"
+    pl.col("fruit").str.contains("苹").alias("苹")                # 也支持中文!
+)
+print(result)
+```
+
+```text
+shape: (4, 6)
+┌───────┬───────────────┬─────────────┬───────┬───────┬───────┐
+│ fruit ┆ starts_with_p ┆ ends_with_r ┆ p..r  ┆ e+    ┆ 苹    │
+│ ---   ┆ ---           ┆ ---         ┆ ---   ┆ ---   ┆ ---   │
+│ str   ┆ bool          ┆ bool        ┆ bool  ┆ bool  ┆ bool  │
+╞═══════╪═══════════════╪═════════════╪═══════╪═══════╪═══════╡
+│ pear  ┆ true          ┆ true        ┆ true  ┆ true  ┆ false │
+│ peer  ┆ true          ┆ true        ┆ true  ┆ true  ┆ false │
+│ pêra  ┆ true          ┆ false       ┆ false ┆ false ┆ false │
+│ 苹果  ┆ false         ┆ false       ┆ false ┆ false ┆ true  │
+└───────┴───────────────┴─────────────┴───────┴───────┴───────┘
+```
+
+### 正则表达式规范
+:::INFO
+
+<div>
+Polars使用Rust crate <a style={{fontSize: '1.3em'}} href="https://docs.rs/regex/latest/regex/">regex</a> 库来解析正则表达式, 语法和Python的`re`模块略有不同, 具体可以查看文档
+</div>
+
+:::
+
+### 提取模式
+
+`str.extract()` 提取匹配到的字符串
+
+```python {13}
+import polars as pl
+
+df = pl.DataFrame(
+    {
+        "urls": [
+            "http://vote.com/ballon_dor?candidate=messi&ref=polars",
+            "http://vote.com/ballon_dor?candidat=jorginho&ref=polars",
+            "http://vote.com/ballon_dor?candidate=ronaldo&ref=polars",
+        ]
+    }
+)
+result = df.select(
+    pl.col("urls").str.extract(r"candidate=(\w+)", group_index=1), # (\w+): 匹配一个或多个单词字符
+)
+print(result)
+```
+
+```text
+shape: (3, 1)
+┌─────────┐
+│ urls    │
+│ ---     │
+│ str     │
+╞═════════╡
+│ messi   │
+│ null    │
+│ ronaldo │
+└─────────┘
+```
+
+要匹配某个模式的所有出现位置, 可以使用函数`extract_all`, 看下面的代码
+
+```python
+import polars as pl
+df = pl.DataFrame({"text": ["123 bla 45 asd", "xyz 678 910t"]})
+result = df.select(
+    pl.col("text").str.extract_all(r"(\d+)").alias("extracted_nrs"),
+)
+print(result)
+```
+
+```text
+shape: (2, 1)
+┌────────────────┐
+│ extracted_nrs  │
+│ ---            │
+│ list[str]      │
+╞════════════════╡
+│ ["123", "45"]  │
+│ ["678", "910"] │
+└────────────────┘
+```
+
+### 替换模式
+
+Polars提供了`replace`和`replace_all`, `replace`最多进行一次替换
+
+```python
+df = pl.DataFrame({"text": ["123abc", "abc456"]})
+result = df.with_columns(
+    pl.col("text").str.replace(r"\d", "-"),
+    pl.col("text").str.replace_all(r"\d", "-").alias("text_replace_all"),
+)
+print(result)
+```
+
+```text
+shape: (2, 2)
+┌────────┬──────────────────┐
+│ text   ┆ text_replace_all │
+│ ---    ┆ ---              │
+│ str    ┆ str              │
+╞════════╪══════════════════╡
+│ -23abc ┆ ---abc           │
+│ abc-56 ┆ abc---           │
+└────────┴──────────────────┘
+```
+
+## 修改字符串
+### 大小写转换
+Polars提供了: `str.to_titlecase()`, `str.to_lowercase`, `str.to_uppercase`
+```python {13-16}
+addresses = pl.DataFrame(
+    {
+        "addresses": [
+            "128 PERF st",
+            "Rust blVD, 158",
+            "PoLaRs Av, 12",
+            "1042 Query sq",
+        ]
+    }
+)
+
+addresses = addresses.select(
+    pl.col("addresses").alias("originals"),
+    pl.col("addresses").str.to_titlecase(),
+    pl.col("addresses").str.to_lowercase().alias("lower"),
+    pl.col("addresses").str.to_uppercase().alias("upper"),
+)
+print(addresses)
+```
+
+```text {7-10}
+shape: (4, 4)
+┌────────────────┬────────────────┬────────────────┬────────────────┐
+│ originals      ┆ addresses      ┆ lower          ┆ upper          │
+│ ---            ┆ ---            ┆ ---            ┆ ---            │
+│ str            ┆ str            ┆ str            ┆ str            │
+╞════════════════╪════════════════╪════════════════╪════════════════╡
+│ 128 PERF st    ┆ 128 Perf St    ┆ 128 perf st    ┆ 128 PERF ST    │
+│ Rust blVD, 158 ┆ Rust Blvd, 158 ┆ rust blvd, 158 ┆ RUST BLVD, 158 │
+│ PoLaRs Av, 12  ┆ Polars Av, 12  ┆ polars av, 12  ┆ POLARS AV, 12  │
+│ 1042 Query sq  ┆ 1042 Query Sq  ┆ 1042 query sq  ┆ 1042 QUERY SQ  │
+└────────────────┴────────────────┴────────────────┴────────────────┘
+```
+### 从末尾剥离字符
+
+Polars在命名空间`str`提供了5各函数, 可以从字符串末尾去除字符
+
+| 功能                  | 行为                |
+|---------------------|-------------------|
+| `strip_chars`       | 删除指定字符的前导和尾随出现的内容 |
+| `strip_chars_end`   | 删除指定字符的尾随出现部分     |
+| `strip_chars_start` | 删除指定字符的前导出现       |
+| `strip_prefix`      | 如果存在，则删除精确的子字符串前缀 |
+| `strip_suffix`      | 如果存在，则删除精确的子字符串后缀 |
+
+
+```python
+addr = pl.col("addresses") # 上面例子中的数据
+chars = ", 0123456789"
+result = addresses.select(
+    addr.str.strip_chars(chars).alias("strip"),
+    addr.str.strip_chars_end(chars).alias("end"),
+    addr.str.strip_chars_start(chars).alias("start"),
+    addr.str.strip_prefix("128 ").alias("prefix"),
+    addr.str.strip_suffix(", 158").alias("suffix"),
+)
+print(result)
+```
+```text
+shape: (4, 5)
+┌───────────┬───────────────┬────────────────┬────────────────┬───────────────┐
+│ strip     ┆ end           ┆ start          ┆ prefix         ┆ suffix        │
+│ ---       ┆ ---           ┆ ---            ┆ ---            ┆ ---           │
+│ str       ┆ str           ┆ str            ┆ str            ┆ str           │
+╞═══════════╪═══════════════╪════════════════╪════════════════╪═══════════════╡
+│ Perf St   ┆ 128 Perf St   ┆ Perf St        ┆ Perf St        ┆ 128 Perf St   │
+│ Rust Blvd ┆ Rust Blvd     ┆ Rust Blvd, 158 ┆ Rust Blvd, 158 ┆ Rust Blvd     │
+│ Polars Av ┆ Polars Av     ┆ Polars Av, 12  ┆ Polars Av, 12  ┆ Polars Av, 12 │
+│ Query Sq  ┆ 1042 Query Sq ┆ Query Sq       ┆ 1042 Query Sq  ┆ 1042 Query Sq │
+└───────────┴───────────────┴────────────────┴────────────────┴───────────────┘
+```
+
+如果没有提供参数, 则三个函数`strip_chars`、`strip_chars_end`和 `strip_chars_start`默认删除空格
+
+### 切片
+除了根据模式指定的方式提取子字符串外, 还可以按指定的偏移量对字符串进行切片, 从而生成子字符串
+
+切片的通用函数是`slice`, 它接受起始偏移量和切片的可选长度. 如果切片的长度未指定, 或者长度超过了字符串的末尾, Polars会将字符串一直切片到末尾
+
+函数`head`和`tail`是分别用于切片字符串的开头和结尾的专用版本
+
+```python
+# 我们先看slice定义, 如果要传递`length`, 就必须显式传递
+def slice(self,
+          offset: int | Expr | Series | str,
+          length: int | Expr | Series | str | None = None) -> Expr
+```
+```python {9}
+df = pl.DataFrame(
+    {
+        "fruits": ["pear", "mango", "dragonfruit", "passionfruit"],
+        "n": [1, -1, 4, -4],
+    }
+)
+
+result = df.with_columns(
+    pl.col("fruits").str.slice(pl.col("n")).alias("slice"), # 针对fruits的每一行数据, 分别从对应的n的位置开始切片
+    pl.col("fruits").str.slice(1).alias("slice_1"), # 针对fruits的每一行数据, 都扔掉第一个字符
+    pl.col("fruits").str.head(pl.col("n")).alias("head"),
+    pl.col("fruits").str.tail(pl.col("n")).alias("tail"),
+)
+print(result)
+```
+```text
+shape: (4, 6)
+┌──────────────┬─────┬─────────┬─────────────┬──────────┬──────────┐
+│ fruits       ┆ n   ┆ slice   ┆ slice_1     ┆ head     ┆ tail     │
+│ ---          ┆ --- ┆ ---     ┆ ---         ┆ ---      ┆ ---      │
+│ str          ┆ i64 ┆ str     ┆ str         ┆ str      ┆ str      │
+╞══════════════╪═════╪═════════╪═════════════╪══════════╪══════════╡
+│ pear         ┆ 1   ┆ ear     ┆ ear         ┆ p        ┆ r        │
+│ mango        ┆ -1  ┆ o       ┆ ango        ┆ mang     ┆ ango     │
+│ dragonfruit  ┆ 4   ┆ onfruit ┆ ragonfruit  ┆ drag     ┆ ruit     │
+│ passionfruit ┆ -4  ┆ ruit    ┆ assionfruit ┆ passionf ┆ ionfruit │
+└──────────────┴─────┴─────────┴─────────────┴──────────┴──────────┘
+```
+
+## API文档
+
+
+import Link from "../../components/Link";
+
+<Link
+    href={"https://docs.pola.rs/api/python/stable/reference/expressions/string.html"}
+    description={"Polars String API 文档"}
+/>

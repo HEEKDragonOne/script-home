@@ -1,0 +1,27 @@
+# CSV
+
+## 读取csv
+
+```python
+import polars as pl
+
+pl.read_csv("parse_time_from_file.csv")
+```
+
+## 写入csv
+
+```python
+import polars as pl
+
+df = pl.DataFrame({"foo":[1,2,3],"bar":["None","bak","baz"]})
+df.write_csv("write_df.csv")
+```
+
+## 扫描csv
+
+> `scan_csv`会创建一个惰性的DataFrame, 不会立即读取文件
+```python
+import polars as pl
+
+lazydf: pl.LazyFrame = pl.scan_csv("parse_time_from_file.csv")
+```

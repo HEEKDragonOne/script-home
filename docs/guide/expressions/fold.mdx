@@ -1,0 +1,232 @@
+# 折叠
+
+Polars提供了许多表达式来执行跨列计算, 例如`sum_horizontal`,`mean_horizontal`,`min_horizontal`. 然而这些只是称为折叠的通用算法的
+特殊情况, 当Polars提供的不够用时, 我们可以使用Polars提供的通用机制来自定义折叠
+
+使用`fold`函数计算的折叠操作会针对整列进行操作, 以实现最高速度. 它们能够高效地利用数据布局, 并且通常矢量化执行
+
+
+## 工作方式
+对于*每一行*来说, 设置一个初始值`acc`, 然后遍历`exprs`中的每个表达式, 每一步都调用我们定义的函数, 把`acc`和表达式的结果(这一行的值)传进去,
+再更新`acc`, 这样最后的`acc`就是这一行的计算结果
+```python
+pl.fold(
+    acc=初始值,                     # 第一个传入 add 的 acc 值
+    function=add,                   # 每一步使用的函数
+    exprs=[expr1, expr2, ...]       # 要依次传入的表达式
+)
+```
+
+```python
+acc = 初始值
+for expr in exprs:
+    acc = add(acc, expr的每行结果)
+```
+
+## Example1
+我们来计算`a+b+c`
+```python
+import polars as pl
+
+df = pl.DataFrame({
+    "a": [1, 2, 3],
+    "b": [4, 5, 6],
+    "c": [7, 8, 9],
+})
+
+# 使用 fold 对每一行进行水平求和
+result = df.select(
+    pl.fold(
+        acc=pl.lit(0),  # 初始累加器为0
+        function=lambda acc, x: acc + x, # 定义累加函数：当前累加器 + 当前列的值
+        exprs=pl.all()  # 对所有列执行计算, 把每一列中的每一行依次传入function中
+    ).alias("sum_fold"),
+	pl.sum_horizontal(pl.col("a","b","c")).alias("sum_horz")    # 对这三列按行求和
+)
+
+print(result)
+```
+
+```text
+shape: (3, 2)
+┌──────────┬──────────┐
+│ sum_fold ┆ sum_horz │
+│ ---      ┆ ---      │
+│ i64      ┆ i64      │
+╞══════════╪══════════╡
+│ 12       ┆ 12       │
+│ 15       ┆ 15       │
+│ 18       ┆ 18       │
+└──────────┴──────────┘
+```
+
+## Example2
+这个例子我们来计算`a^2+b-c`, 使用两种方式来定义表达式
+
+```python {15,20}
+import polars as pl
+
+df = pl.DataFrame({
+    "a": [1, 2, 3],
+    "b": [4, 5, 6],
+    "c": [7, 8, 9],
+})
+def add(acc: pl.Series, x: pl.Series) -> pl.Series:
+	return acc+x
+df.select(
+	pl.all(),
+	pl.fold(
+		acc=pl.col("a")*pl.col("a"),
+		function=add,
+		exprs=[pl.col("b"), -pl.col("c")]
+    ).alias("expr_list_a^2+b-c"),
+	pl.fold(
+		acc=pl.col("a")*pl.col("a"),
+		function=add,
+		exprs=pl.col("b")-pl.col("c")
+    ).alias("expr_a^2+b-c")
+)
+```
+```text
+shape: (3, 5)
+┌─────┬─────┬─────┬───────────────────┬──────────────┐
+│ a   ┆ b   ┆ c   ┆ expr_list_a^2+b-c ┆ expr_a^2+b-c │
+│ --- ┆ --- ┆ --- ┆ ---               ┆ ---          │
+│ i64 ┆ i64 ┆ i64 ┆ i64               ┆ i64          │
+╞═════╪═════╪═════╪═══════════════════╪══════════════╡
+│ 1   ┆ 4   ┆ 7   ┆ -2                ┆ -2           │
+│ 2   ┆ 5   ┆ 8   ┆ 1                 ┆ 1            │
+│ 3   ┆ 6   ┆ 9   ┆ 6                 ┆ 6            │
+└─────┴─────┴─────┴───────────────────┴──────────────┘
+```
+
+## 初始值`acc`
+
+如果要进行乘法运算, 我们的累加器就不能设置为0, 我们再来看一个例子, 加深理解
+
+```python {10-12}
+import polars as pl
+
+df = pl.DataFrame({
+    "a": [1, 2, 3],
+    "b": [4, 5, 6],
+    "c": [7, 8, 9],
+})
+res = df.select(
+	pl.fold(
+		acc=pl.lit(0),
+		function=lambda acc, x: acc * x,
+		exprs=pl.all()
+    ).alias("prod")
+)
+print(res)
+```
+可以看到每一行的结果都是0, 因为对于每一行来说, 都是`0` × `第一列的值` × `第二列的值` × `第三列的值`, 结果必然是0
+```text
+shape: (3, 1)
+┌──────┐
+│ prod │
+│ ---  │
+│ i64  │
+╞══════╡
+│ 0    │
+│ 0    │
+│ 0    │
+└──────┘
+```
+
+想解决问题非常简单, acc设置为1即可, 这里我们使用了`operator.mul`, 可以简化我们的代码
+```python {10-12}
+import polars as pl
+import operator
+df = pl.DataFrame({
+    "a": [1, 2, 3],
+    "b": [4, 5, 6],
+    "c": [7, 8, 9],
+})
+res = df.select(
+	pl.fold(
+		acc=pl.lit(1),
+		function=operator.mul,
+		exprs=pl.all()
+    ).alias("prod")
+)
+print(res)
+```
+
+```text
+shape: (3, 1)
+┌──────┐
+│ prod │
+│ ---  │
+│ i64  │
+╞══════╡
+│ 28   │
+│ 80   │
+│ 162  │
+└──────┘
+```
+
+## 使用条件/过滤
+
+我们可以很方便的使用条件语句来选择我们想要的行
+
+```python
+df = pl.DataFrame(
+    {
+        "a": [1, 2, 3],
+        "b": [0, 1, 2],
+    }
+)
+
+result = df.filter(
+    pl.fold(
+        acc=pl.lit(True),
+        function=lambda acc, x: acc & x,
+        exprs=pl.all() > 1,
+    )
+)
+print(result)
+```
+
+```text
+shape: (1, 2)
+┌─────┬─────┐
+│ a   ┆ b   │
+│ --- ┆ --- │
+│ i64 ┆ i64 │
+╞═════╪═════╡
+│ 3   ┆ 2   │
+└─────┴─────┘
+```
+
+## 字符串
+折叠操作可以用于连接字符串数据, 然而由于`fold`在每一步都会生成中间结果, 中间结果(字符串是不可变数据), 每次拼接都会生成新的字符串,
+占用内存会很多, 所以这里的场景可以使用`pl.concat_str`来代替, 优化由Polars来完成
+```python
+df = pl.DataFrame(
+    {
+        "a": ["a", "b", "c"],
+        "b": [1, 2, 3],
+    }
+)
+
+result = df.select(
+    pl.concat_str(["a", "b"]).alias("ab"),
+	pl.concat_str(pl.col("a"),pl.lit("_"),pl.col("b")).alias("a_b")
+)
+print(result)
+```
+
+```text
+shape: (3, 2)
+┌─────┬─────┐
+│ ab  ┆ a_b │
+│ --- ┆ --- │
+│ str ┆ str │
+╞═════╪═════╡
+│ a1  ┆ a_1 │
+│ b2  ┆ b_2 │
+│ c3  ┆ c_3 │
+└─────┴─────┘
+```

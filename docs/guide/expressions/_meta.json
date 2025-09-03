@@ -1,0 +1,67 @@
+[
+  {
+    "type": "file",
+    "name": "basic_operations.md",
+    "label": "基本操作"
+  },
+  {
+    "type": "file",
+    "name": "expression_extensions.mdx",
+    "label": "表达式扩展"
+  },
+  {
+    "type": "file",
+    "name": "casting.mdx",
+    "label": "强制类型转换"
+  },
+  {
+    "type": "file",
+    "name": "strings.mdx",
+    "label": "字符串"
+  },
+  {
+    "type": "file",
+    "name": "list_array.mdx",
+    "label": "列表和数组"
+  },
+  {
+    "type": "file",
+    "name": "enum.mdx",
+    "label": "分类数据和枚举"
+  },
+  {
+    "type": "file",
+    "name": "struct.mdx",
+    "label": "结构体"
+  },
+  {
+    "type": "file",
+    "name": "missing_data.mdx",
+    "label": "缺失数据"
+  },
+  {
+    "type": "file",
+    "name": "aggregation.mdx",
+    "label": "聚合"
+  },
+  {
+    "type": "file",
+    "name": "window_function.mdx",
+    "label": "窗口函数"
+  },
+  {
+    "type": "file",
+    "name": "fold.mdx",
+    "label": "折叠"
+  },
+  {
+    "type": "file",
+    "name": "user_defined_python_function.mdx",
+    "label": "用户自定义Python函数"
+  },
+  {
+    "type": "file",
+    "name": "numpy_function.mdx",
+    "label": "Numpy函数"
+  }
+]

@@ -1,0 +1,170 @@
+import Link from "../../../components/Link";
+
+# 解析
+
+Polars原生支持解析时间序列数据, 并支持执行更复杂的操作, 例如时间分组和重采样.
+
+## 数据类型
+
+Polars具有以下日期时间数据类型
+
+- `Date`, 示例: 2015-07-05, 内部表示为自unix纪元以来的天数
+- `Datetime`, 示例: 2014-07-08 07:00:00, 在内部使用64位整数表示自unix纪元以来过了多少时间, 支持不同的单位, 比如ns,us,ms
+- `Duration`, 表示时间差, 是Date-Date,Datetime-Datetime之间的差
+- `Time`, 表示一天中的某几个时刻, 比如: `07:00:00`, 内部用纳秒表示从午夜(00:00:00)开始过了多少时间
+
+## 从文件中解析时间
+
+<Link
+    href="/parse_time_from_file.csv"
+    description={"parse_time_from_file.csv"}
+/>
+
+### 默认解析
+如果不指定`try_parse_dates=True`, Polars不会解析为时间格式
+
+```python
+import polars as pl
+
+df = pl.read_csv("./parse_time_from_file.csv")
+
+print(df)
+```
+可以看到默认是字符串类型
+```text {5}
+shape: (6, 2)
+┌────────────┬────────┐
+│ Date       ┆ Close  │
+│ ---        ┆ ---    │
+│ str        ┆ f64    │
+╞════════════╪════════╡
+│ 1982-02-23 ┆ 24.62  │
+│ 1982-05-06 ┆ 27.38  │
+│ 1981-05-18 ┆ 28.0   │
+│ 1981-09-25 ┆ 14.25  │
+│ 2013-11-07 ┆ 512.49 │
+│ 2014-02-25 ┆ 522.06 │
+└────────────┴────────┘
+```
+
+### 指定解析为时间格式
+从csv文件加载数据时, 如果设置`try_parse_dates=True`, Polars会尝试解析日期和时间, 设置这个标识时, infer_schema_length默认为100行触发推断模式,
+计算成本有些高, 如果行数较多, 可能会降低文件加载速度
+
+```python {4,5}
+import polars as pl
+
+df = pl.read_csv(
+    "./parse_time_from_file.csv",
+    try_parse_dates=True
+)
+print(df)
+```
+可以看到下面结果中的第五行是`date`数据类型
+```text {5}
+shape: (6, 2)
+┌────────────┬────────┐
+│ Date       ┆ Close  │
+│ ---        ┆ ---    │
+│ date       ┆ f64    │
+╞════════════╪════════╡
+│ 1982-02-23 ┆ 24.62  │
+│ 1982-05-06 ┆ 27.38  │
+│ 1981-05-18 ┆ 28.0   │
+│ 1981-09-25 ┆ 14.25  │
+│ 2013-11-07 ┆ 512.49 │
+│ 2014-02-25 ┆ 522.06 │
+└────────────┴────────┘
+```
+
+## 将字符串转换为日期
+
+将一列编码为字符串的日期时间转换为日期类型, 可以使用`pl.col("col").str.to_date()`
+
+```python
+import polars as pl
+
+df = pl.read_csv("./parse_time_from_file.csv")
+
+df = df.with_columns(pl.col("Date").str.to_date("%Y-%m-%d"))
+
+print(df)
+```
+
+```text
+shape: (6, 2)
+┌────────────┬────────┐
+│ Date       ┆ Close  │
+│ ---        ┆ ---    │
+│ date       ┆ f64    │
+╞════════════╪════════╡
+│ 1982-02-23 ┆ 24.62  │
+│ 1982-05-06 ┆ 27.38  │
+│ 1981-05-18 ┆ 28.0   │
+│ 1981-09-25 ┆ 14.25  │
+│ 2013-11-07 ┆ 512.49 │
+│ 2014-02-25 ┆ 522.06 │
+└────────────┴────────┘
+```
+
+## 从日期列中提取日期特征
+我们可以使用命名空间`.dt`从日期列中提取年份或者日期等数据特征
+
+```python {8}
+import polars as pl
+
+df = pl.read_csv("./parse_time_from_file.csv")
+
+df = df.with_columns(pl.col("Date").str.to_date("%Y-%m-%d"))
+df_with_year = df.with_columns(
+	    pl.col("Date")
+	    .dt.year()
+		.alias("year")
+)
+
+print(df_with_year)
+```
+
+```text
+shape: (6, 3)
+┌────────────┬────────┬──────┐
+│ Date       ┆ Close  ┆ year │
+│ ---        ┆ ---    ┆ ---  │
+│ date       ┆ f64    ┆ i32  │
+╞════════════╪════════╪══════╡
+│ 1982-02-23 ┆ 24.62  ┆ 1982 │
+│ 1982-05-06 ┆ 27.38  ┆ 1982 │
+│ 1981-05-18 ┆ 28.0   ┆ 1981 │
+│ 1981-09-25 ┆ 14.25  ┆ 1981 │
+│ 2013-11-07 ┆ 512.49 ┆ 2013 │
+│ 2014-02-25 ┆ 522.06 ┆ 2014 │
+└────────────┴────────┴──────┘
+```
+
+## 混合时差
+
+```python {9,10}
+data = [
+    "2021-03-27T00:00:00+0100",
+    "2021-03-28T00:00:00+0100",
+    "2021-03-29T00:00:00+0200",
+    "2021-03-30T00:00:00+0200",
+]
+mixed_parsed = (
+    pl.Series(data)
+    .str.to_datetime("%Y-%m-%dT%H:%M:%S%z")
+    .dt.convert_time_zone("Europe/Brussels")
+)
+print(mixed_parsed)
+```
+
+```text
+shape: (4,)
+Series: '' [datetime[μs, Europe/Brussels]]
+[
+    2021-03-27 00:00:00 CET
+    2021-03-28 00:00:00 CET
+    2021-03-29 00:00:00 CEST
+    2021-03-30 00:00:00 CEST
+]
+```

@@ -1,0 +1,107 @@
+import Link from "../../../components/Link";
+
+# 过滤
+
+过滤日期列的方式与使用该方法过滤其他类型的列的方式相同, 使用`filter`即可
+
+Polars使用Python原生的`datetime`, `date`和`timedelta`来进行数据类型`pl.Datetime`,`pl.Date`和`pl.Durationi`之间的相等性比较
+
+我们依然使用上一节的数据集, 点击即可下载
+
+<Link
+    href="/parse_time_from_file.csv"
+    description={"parse_time_from_file.csv"}
+/>
+
+
+```python
+import polars as pl
+df = pl.read_csv("./parse_time_from_file.csv", try_parse_dates=True)
+print(df)
+```
+
+```text
+shape: (6, 2)
+┌────────────┬────────┐
+│ Date       ┆ Close  │
+│ ---        ┆ ---    │
+│ date       ┆ f64    │
+╞════════════╪════════╡
+│ 1982-02-23 ┆ 24.62  │
+│ 1982-05-06 ┆ 27.38  │
+│ 1981-05-18 ┆ 28.0   │
+│ 1981-09-25 ┆ 14.25  │
+│ 2013-11-07 ┆ 512.49 │
+│ 2014-02-25 ┆ 522.06 │
+└────────────┴────────┘
+```
+
+## 按单个日期过滤
+我们可以使用过滤表达式中的`==`来过滤单个日期
+
+```python {4}
+from datetime import datetime
+
+filtered_df = df.filter(
+    pl.col("Date") == datetime(2014, 2, 25),
+)
+print(filtered_df)
+```
+
+```text
+shape: (1, 2)
+┌────────────┬────────┐
+│ Date       ┆ Close  │
+│ ---        ┆ ---    │
+│ date       ┆ f64    │
+╞════════════╪════════╡
+│ 2014-02-25 ┆ 522.06 │
+└────────────┴────────┘
+```
+
+## 按日期范围过滤
+
+我们可以使用`is_between`来进行范围过滤
+
+```python {3}
+from datetime import date
+filtered_range_df = df.filter(
+	pl.col("Date").is_between(date(2010,1,1),date(2016,1,1))
+)
+
+print(filtered_range_df)
+```
+
+```text
+shape: (2, 2)
+┌────────────┬────────┐
+│ Date       ┆ Close  │
+│ ---        ┆ ---    │
+│ date       ┆ f64    │
+╞════════════╪════════╡
+│ 2013-11-07 ┆ 512.49 │
+│ 2014-02-25 ┆ 522.06 │
+└────────────┴────────┘
+```
+
+## 负数日期
+Polars可以很好的解析和存储负数日期, 但Python的`datetime`库却不行. 因此为了过滤可以使用`.dt`命名空间中的属性
+
+```python
+ts = pl.Series(["-1300-05-23", "-1400-03-02"]).str.to_date()
+negative_dates_df = pl.DataFrame({"ts": ts, "values": [3, 4]})
+
+negative_dates_filtered_df = negative_dates_df.filter(pl.col("ts").dt.year() < -1300)
+print(negative_dates_filtered_df)
+```
+
+```text
+shape: (1, 2)
+┌─────────────┬────────┐
+│ ts          ┆ values │
+│ ---         ┆ ---    │
+│ date        ┆ i64    │
+╞═════════════╪════════╡
+│ -1400-03-02 ┆ 4      │
+└─────────────┴────────┘
+```

@@ -1,0 +1,315 @@
+# 缺失值
+
+本章节学习如何处理Polars中的缺失数据
+
+## `null`和`NaN`
+
+- 缺失数据使用`null`表示, 适用于所有的数据类型, 包括数值类型
+- `NaN`表示非数字的结果, 比如`0/0`
+    - 不与任何值相等(包括自身)
+    - 任何涉及`NaN`的运算都会返回`NaN`
+
+
+```python
+import polars as pl
+
+df = pl.DataFrame(
+    {
+        "value": [1, None],
+    },
+)
+print(df)
+```
+
+```text
+shape: (2, 1)
+┌───────┐
+│ value │
+│ ---   │
+│ i64   │
+╞═══════╡
+│ 1     │
+│ null  │
+└───────┘
+```
+
+:::note {title="与pandas的区别"}
+Pandas中, 用于表示缺失数据的值取决于**列**的数据类型, 在Polars中, 始终使用`null`
+:::
+
+## 缺失数据的元数据
+> 这里的元数据是包含多少个缺失值等
+
+可以通过`null_count`查询一列中缺少多少个值
+```python
+import polars as pl
+
+df = pl.DataFrame(
+    {
+        "value": [1, None],
+    },
+)
+null_count_df = df.null_count()
+print(null_count_df)
+print(df.get_column("value").null_count()) # 可以直接获得一个具体值: 1
+```
+
+```text
+shape: (1, 1)
+┌───────┐
+│ value │
+│ ---   │
+│ u32   │
+╞═══════╡
+│ 1     │
+└───────┘
+1
+```
+
+该函数可以在`DataFrame`上, `DataFrame`中的某一列上或直接在`Series`中调用, 并且这个结果是已知的, Polars会跟踪记录, 所以**调用成本很低**
+
+Polars使用一种称为"有效位图"的东西来了解哪些值是缺失的. 采用位图编码, 内存效率较高. `is_null`通过有效性位图来报告哪些是`null`, 哪些不是
+
+```python
+is_null_series = df.select(
+    pl.col("value").is_null(),
+)
+print(is_null_series)
+```
+
+```text
+shape: (2, 1)
+┌───────┐
+│ value │
+│ ---   │
+│ bool  │
+╞═══════╡
+│ false │
+│ true  │
+└───────┘
+```
+
+## 填充缺失数据
+
+可以使用方法`fill_null`来填充缺失数据, 可以通过几种不同的方式来指定如何有效的填充
+- 指定填充值
+- Polars表达式, 例如另一列的值
+- 基于临近值的策略, 例如向前或向后填充
+- 插值
+我们先定义一个简单的DataFrame用来演示, 其中第二列有两个缺失值
+
+```python
+df = pl.DataFrame(
+    {
+        "col1": [0.5, 1, 1.5, 2, 2.5],
+        "col2": [1, None, 3, None, 5],
+    },
+)
+print(df)
+```
+```text
+shape: (5, 2)
+┌──────┬──────┐
+│ col1 ┆ col2 │
+│ ---  ┆ ---  │
+│ f64  ┆ i64  │
+╞══════╪══════╡
+│ 0.5  ┆ 1    │
+│ 1.0  ┆ null │
+│ 1.5  ┆ 3    │
+│ 2.0  ┆ null │
+│ 2.5  ┆ 5    │
+└──────┴──────┘
+```
+
+### 使用指定的值填充
+使用`fill_null`方法, 可以使用一个值来填充所有缺失数据
+```python
+fill_literal_df = df.with_columns(
+    pl.col("col2").fill_null(3).alias("fill_col2"),
+)
+print(fill_literal_df)
+```
+新增一列用来对比, 可以看下面的结果
+```text
+shape: (5, 3)
+┌──────┬──────┬───────────┐
+│ col1 ┆ col2 ┆ fill_col2 │
+│ ---  ┆ ---  ┆ ---       │
+│ f64  ┆ i64  ┆ i64       │
+╞══════╪══════╪═══════════╡
+│ 0.5  ┆ 1    ┆ 1         │
+│ 1.0  ┆ null ┆ 3         │
+│ 1.5  ┆ 3    ┆ 3         │
+│ 2.0  ┆ null ┆ 3         │
+│ 2.5  ┆ 5    ┆ 5         │
+└──────┴──────┴───────────┘
+```
+
+### 用表达式填充
+我们可以将第二列的缺失值用第一列的值得2倍来填充
+
+```python
+fill_expression_df = df.with_columns(
+    pl.col("col2").fill_null((2 * pl.col("col1")).cast(pl.Int64)).alias("fill_col2"),
+)
+print(fill_expression_df)
+```
+```text
+shape: (5, 3)
+┌──────┬──────┬───────────┐
+│ col1 ┆ col2 ┆ fill_col2 │
+│ ---  ┆ ---  ┆ ---       │
+│ f64  ┆ i64  ┆ i64       │
+╞══════╪══════╪═══════════╡
+│ 0.5  ┆ 1    ┆ 1         │
+│ 1.0  ┆ null ┆ 2         │
+│ 1.5  ┆ 3    ┆ 3         │
+│ 2.0  ┆ null ┆ 4         │
+│ 2.5  ┆ 5    ┆ 5         │
+└──────┴──────┴───────────┘
+```
+
+### 根据临近值策略进行填充
+可以指定填充策略, 填充策略有:
+- `"forward"`: 填充缺失值, 使用**第一个**非缺失值
+- `"backward"`: 填充缺失值, 使用**最后一个**非缺失值
+- `"min"`: 填充缺失值, 使用**最小值**
+- `"max"`: 填充缺失值, 使用**最大值**
+- `"mean"`: 填充缺失值, 使用**平均值**
+- `"zero"`: 填充缺失值, 使用**0**
+- `"one"`: 填充缺失值, 使用**1**
+```python
+fill_forward_df = df.with_columns(
+    pl.col("col2").fill_null(strategy="forward").alias("forward"),
+    pl.col("col2").fill_null(strategy="backward").alias("backward"),
+)
+print(fill_forward_df)
+```
+
+```text
+shape: (5, 4)
+┌──────┬──────┬─────────┬──────────┐
+│ col1 ┆ col2 ┆ forward ┆ backward │
+│ ---  ┆ ---  ┆ ---     ┆ ---      │
+│ f64  ┆ i64  ┆ i64     ┆ i64      │
+╞══════╪══════╪═════════╪══════════╡
+│ 0.5  ┆ 1    ┆ 1       ┆ 1        │
+│ 1.0  ┆ null ┆ 1       ┆ 3        │
+│ 1.5  ┆ 3    ┆ 3       ┆ 3        │
+│ 2.0  ┆ null ┆ 3       ┆ 5        │
+│ 2.5  ┆ 5    ┆ 5       ┆ 5        │
+└──────┴──────┴─────────┴──────────┘
+```
+
+### 插值填充
+插值填充就是找一个中间值来填充, 函数具体信息可以查看文档, 默认是线性插值, 这里需要注意的是, 开头和结尾的缺失值仍然是空
+```python {2}
+fill_interpolation_df = df.with_columns(
+    pl.col("col2").interpolate(),
+)
+print(fill_interpolation_df)
+```
+```text
+shape: (5, 2)
+┌──────┬──────┐
+│ col1 ┆ col2 │
+│ ---  ┆ ---  │
+│ f64  ┆ f64  │
+╞══════╪══════╡
+│ 0.5  ┆ 1.0  │
+│ 1.0  ┆ 2.0  │
+│ 1.5  ┆ 3.0  │
+│ 2.0  ┆ 4.0  │
+│ 2.5  ┆ 5.0  │
+└──────┴──────┘
+```
+
+## 非数字或者`NaN`值
+浮点类型的列可能有值是`NaN`, 可能会与`null`混淆.
+
+我们可以直接创建`NaN`
+```python
+import numpy as np
+
+nan_df = pl.DataFrame(
+    {
+        "value": [1.0, np.nan, float("nan"), 3.0],
+    },
+)
+print(nan_df)
+```
+
+```text
+shape: (4, 1)
+┌───────┐
+│ value │
+│ ---   │
+│ f64   │
+╞═══════╡
+│ 1.0   │
+│ NaN   │
+│ NaN   │
+│ 3.0   │
+└───────┘
+```
+也可能作为计算的结果出现
+
+```python
+
+df = pl.DataFrame(
+    {
+        "dividend": [1, 0, -1],
+        "divisor": [1, 0, -1],
+    }
+)
+result = df.select(pl.col("dividend") / pl.col("divisor"))
+print(result)
+```
+
+```text
+shape: (3, 1)
+┌──────────┐
+│ dividend │
+│ ---      │
+│ f64      │
+╞══════════╡
+│ 1.0      │
+│ NaN      │
+│ 1.0      │
+└──────────┘
+```
+
+在Polars中, `NaN`值被视为浮点数据类型, **不被视为缺失数据**, 这意味着
+- `null_count()`不统计`NaN`
+- 可以使用`fill_nan()`填充, 而`fill_null()`不会填充
+
+Polars不会保存与`NaN`值相关的元数据, 因此`is_nan()`是需要计算的
+
+`null`与`NaN`之间的另一个区别是, 数值聚合函数在计算时会跳过缺失值, 而值`NaN`会被计入计算中, 并且通常传递到结果中.
+如果需要, 可以将`NaN`替换为`null`来避免此行为
+
+```python
+nan_df = pl.DataFrame(
+    {
+        "value": [1.0, np.nan, float("nan"), 3.0],
+    },
+)
+mean_nan_df = nan_df.with_columns(
+    pl.col("value").fill_nan(None).alias("replaced"),
+).select(
+    pl.all().mean(),
+    pl.all().sum(),
+)
+print(mean_nan_df)
+```
+```text
+shape: (1, 4)
+┌────────────┬───────────────┬───────────┬──────────────┐
+│ value_mean ┆ replaced_mean ┆ value_sum ┆ replaced_sum │
+│ ---        ┆ ---           ┆ ---       ┆ ---          │
+│ f64        ┆ f64           ┆ f64       ┆ f64          │
+╞════════════╪═══════════════╪═══════════╪══════════════╡
+│ NaN        ┆ 2.0           ┆ NaN       ┆ 4.0          │
+└────────────┴───────────────┴───────────┴──────────────┘
+```

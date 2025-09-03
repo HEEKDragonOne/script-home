@@ -1,0 +1,284 @@
+# 用户自定义的Python函数
+
+尽管Polars表达式非常强大灵活, 但有时我们依然需要自定义函数来解决问题. 本章中我们介绍两个API来实现此目的:
+
+- `map_elements`: 对Series中的每个值调用函数
+- `map_batches`: 始终将完整`Series`传给函数
+
+## 逐个处理: `map_elements`
+
+```python
+import polars as pl
+import hashlib
+df = pl.DataFrame({
+	"keys": ["a","a","b","b"],
+	"values": [1,2,3,4]
+})
+def func(x: int)-> str:
+    print(f"handle {x}")
+    return hashlib.md5(str(x).encode()).hexdigest()
+
+res = df.select(
+	pl.all(),
+	pl.col("values").map_elements(
+		function=func,
+		return_dtype=pl.String
+    ).alias("hash")
+)
+print(res)
+```
+可以看`map_elements`会依次调用函数, 一共调用了4次
+```text
+handle 1
+handle 2
+handle 3
+handle 4
+shape: (4, 3)
+┌──────┬────────┬─────────────────────────────────┐
+│ keys ┆ values ┆ hash                            │
+│ ---  ┆ ---    ┆ ---                             │
+│ str  ┆ i64    ┆ str                             │
+╞══════╪════════╪═════════════════════════════════╡
+│ a    ┆ 1      ┆ c4ca4238a0b923820dcc509a6f7584… │
+│ a    ┆ 2      ┆ c81e728d9d4c2f636f067f89cc1486… │
+│ b    ┆ 3      ┆ eccbc87e4b5ce2fe28308fd9f2a7ba… │
+│ b    ┆ 4      ┆ a87ff679a2f3e71d9181a67b754212… │
+└──────┴────────┴─────────────────────────────────┘
+```
+
+:::warning
+如果我们的的函数可以使用表达式就能完成, 那么Polars会提示我们使用表达式来代替, 看下面代码
+:::
+
+```python {11}
+import polars as pl
+
+df = pl.DataFrame({
+	"keys": ["a","a","b","b"],
+	"values": [1,2,3,4]
+})
+
+res = df.select(
+	pl.all(),
+	pl.col("values").map_elements(
+		function=lambda x: x+1,
+		return_dtype=pl.Int32
+    ).alias("add")
+)
+print(res)
+```
+```text {13-18}
+shape: (4, 3)
+┌──────┬────────┬─────┐
+│ keys ┆ values ┆ add │
+│ ---  ┆ ---    ┆ --- │
+│ str  ┆ i64    ┆ i32 │
+╞══════╪════════╪═════╡
+│ a    ┆ 1      ┆ 2   │
+│ a    ┆ 2      ┆ 3   │
+│ b    ┆ 3      ┆ 4   │
+│ b    ┆ 4      ┆ 5   │
+└──────┴────────┴─────┘
+PolarsInefficientMapWarning:
+Expr.map_elements is significantly slower than the native expressions API.
+Only use if you absolutely CANNOT implement your logic otherwise.
+Replace this expression...
+  - pl.col("values").map_elements(lambda x: ...)
+with this one instead:
+  + pl.col("values") + 1
+
+  pl.col("values").map_elements(
+```
+
+`map_elements()`存在两个问题:
+1. **仅限于单个值**: 通常需要对`Series`整体计算, 而不是针对单个项目进行计算
+2. **性能开销**: 为每个值单独调用函数会增加很多开销
+
+## 整体处理: `map_batches`
+下面的代码计算`Series`中每个值和整个`Series`平均值的差值
+
+```python
+import polars as pl
+
+df = pl.DataFrame({
+	"keys": ["a","a","b","b"],
+	"values": [1,2,3,4]
+})
+
+
+def diff_from_mean(series: pl.Series) -> pl.Series:
+	"""
+	计算序列中每个值和整个序列平均值的差值
+	:param series: 需要计算的Series
+	:return: 返回差值Series
+	"""
+	total = 0
+	for value in series:
+		total += value
+	mean = total / series.len()
+	print("mean: ", mean)
+	diff = []
+	for value in series:
+		diff.append(value-mean)
+	return pl.Series(diff)
+
+res = df.select(
+	pl.all(),
+	pl.col("values").map_batches(diff_from_mean).alias("diff")
+)
+print(res)
+```
+
+```text
+mean:  2.5
+shape: (4, 3)
+┌──────┬────────┬──────┐
+│ keys ┆ values ┆ diff │
+│ ---  ┆ ---    ┆ ---  │
+│ str  ┆ i64    ┆ f64  │
+╞══════╪════════╪══════╡
+│ a    ┆ 1      ┆ -1.5 │
+│ a    ┆ 2      ┆ -0.5 │
+│ b    ┆ 3      ┆ 0.5  │
+│ b    ┆ 4      ┆ 1.5  │
+└──────┴────────┴──────┘
+```
+
+## 使用用户自定义函数进行快速操作
+纯Python实现的问题在于速度慢, 如果想要快速获得结果, 需要尽量减少Python代码的调用
+
+为了最大限度地提高速度, Polars支持Numpy定义的一对接口, 称作: `ufuncs`和`通用ufuncs`. 前者对每个项目单独执行, 后者接受整个Numpy数组
+
+来看一个使用numpy函数的例子
+
+```python
+import numpy as np
+import polars as pl
+df = pl.DataFrame({
+	"keys": ["a","a","b","b"],
+	"values": [1,2,3,4]
+})
+out = df.select(pl.col("values").map_batches(np.log))
+print(out)
+```
+
+```text
+shape: (4, 1)
+┌──────────┐
+│ values   │
+│ ---      │
+│ f64      │
+╞══════════╡
+│ 0.0      │
+│ 0.693147 │
+│ 1.098612 │
+│ 1.386294 │
+└──────────┘
+```
+
+## 示例: 使用`Numba`的快速自定义函数
+Numpy提供的函数很有用, 但我们的目标是编写自己的函数, 如果我们想要一个上面示例中`diff_from_mean`的快速版本,
+在Python中编写此代码的最简单方法是[Numba](https://numba.readthedocs.io/en/stable/), 允许我们使用Python编写自定义函数,
+同时享受编译代码的优势
+
+Numba提供了一个名为`@guvectorize`的装饰器, 通过将Python函数编译为快速的机器代码来创建通用的`ufunc`函数, 以便Polars可以使用它
+
+在以下示例中, `diff_from_mean_numba()`将在导入时编译为快速的机器码, 这将花费一些时间.
+之后,对该函数的所有调用都将快速运行. Series在传递给函数之前, 它将被转换为NumPy数组
+
+```python
+from numba import float64, guvectorize, int64
+
+
+# This will be compiled to machine code, so it will be fast. The Series is
+# converted to a NumPy array before being passed to the function. See the
+# Numba documentation for more details:
+# https://numba.readthedocs.io/en/stable/user/vectorize.html
+@guvectorize([(int64[:], float64[:])], "(n)->(n)")
+def diff_from_mean_numba(arr, result):
+    total = 0
+    for value in arr:
+        total += value
+    mean = total / len(arr)
+    for i, value in enumerate(arr):
+        result[i] = value - mean
+
+
+out = df.select(pl.col("values").map_batches(diff_from_mean_numba))
+print(out)
+```
+
+```text
+shape: (4, 1)
+┌────────┐
+│ values │
+│ ---    │
+│ f64    │
+╞════════╡
+│ -1.5   │
+│ -0.5   │
+│ 0.5    │
+│ 1.5    │
+└────────┘
+```
+
+## 调用通用ufunc时不允许缺少数据
+传递用户自定义函数之前, 一个Series会被转换为Numpy数组, 由于Numpy数组没有缺失数据的概念, 所以如果原始Series中缺失数据,
+那就意味着生成的Numpy数组与实际不匹配
+
+在调用自定义函数之前需要填充缺失数据或者删除缺失数据
+
+## 组合多个列值
+如果要将多列传递给用户自定义函数, 可以使用`Struct`, 其基本思想是将多列组合成`Struct`, 然后函数可以提取这些列
+
+```python
+# Add two arrays together:
+@guvectorize([(int64[:], int64[:], float64[:])], "(n),(n)->(n)")
+def add(arr, arr2, result):
+    for i in range(len(arr)):
+        result[i] = arr[i] + arr2[i]
+
+
+df3 = pl.DataFrame({"values1": [1, 2, 3], "values2": [10, 20, 30]})
+
+out = df3.select(
+    # Create a struct that has two columns in it:
+    pl.struct(["values1", "values2"])
+    # Pass the struct to a lambda that then passes the individual columns to
+    # the add() function:
+    .map_batches(
+        lambda combined: add(
+            combined.struct.field("values1"), combined.struct.field("values2")
+        )
+    )
+    .alias("add_columns")
+)
+print(out)
+```
+
+```text
+shape: (3, 1)
+┌─────────────┐
+│ add_columns │
+│ ---         │
+│ f64         │
+╞═════════════╡
+│ 11.0        │
+│ 22.0        │
+│ 33.0        │
+└─────────────┘
+```
+
+## 返回类型
+自定义的Python函数通常是黑盒的, Polars不知道我们的函数要干什么, 也不知道会返回什么. 因此返回值类型会被自动推断, 通过等待第一个非空值来实现这点,
+然后这个值用于确定结果的类型
+
+Python类型到Polars类型的映射如下
+
+- `int` -> `Int64`
+- `float` -> `Float64`
+- `bool` -> `Boolean`
+- `str` -> `String`
+- `list[tp]` -> `List[tp]`
+- `dict[str,[tp]]` -> `Struct`
+- `Any` -> `object` (尽量避免这种)

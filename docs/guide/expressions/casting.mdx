@@ -1,0 +1,327 @@
+# 强制类型转换
+
+强制类型转换会将[列的底层数据类型](../concepts/data_types_and_structures.mdx)转换为新的数据类型, 可以通过`cast`函数进行
+
+该函数包含一个参数`strict`, 用于确定Polars在遇到无法从源数据类型转换为目标数据类型的值时的行为
+
+默认为`strict=True`, Polars会抛出错误,通知用户转换失败, 同时提供无法转换的值得相信信息. 否则任何无法转换的值都会被静默转换为null
+
+## 基本示例
+
+```python
+import polars as pl
+
+df = pl.DataFrame(
+    {
+        "integers": [1, 2, 3],
+        "big_integers": [10000002, 2, 30000003],
+        "floats": [4.0, 5.8, -6.3],
+    }
+)
+
+print(df)
+```
+
+```text
+shape: (3, 3)
+┌──────────┬──────────────┬────────┐
+│ integers ┆ big_integers ┆ floats │
+│ ---      ┆ ---          ┆ ---    │
+│ i64      ┆ i64          ┆ f64    │
+╞══════════╪══════════════╪════════╡
+│ 1        ┆ 10000002     ┆ 4.0    │
+│ 2        ┆ 2            ┆ 5.8    │
+│ 3        ┆ 30000003     ┆ -6.3   │
+└──────────┴──────────────┴────────┘
+```
+
+下面代码将i64类型的数据转换为f32, 将f64转换为i32, 只需要使用`.cast()`方法即可, 需要注意浮点数转换为整数时, 丢失精度
+
+```python
+result = df.select(
+    pl.col("integers").cast(pl.Float32).alias("integers_as_floats"),
+    pl.col("floats").cast(pl.Int32).alias("floats_as_integers"),
+)
+print(result)
+```
+
+```text {9}
+shape: (3, 2)
+┌────────────────────┬────────────────────┐
+│ integers_as_floats ┆ floats_as_integers │
+│ ---                ┆ ---                │
+│ f32                ┆ i32                │
+╞════════════════════╪════════════════════╡
+│ 1.0                ┆ 4                  │
+│ 2.0                ┆ 5                  │
+│ 3.0                ┆ -6                 │
+└────────────────────┴────────────────────┘
+```
+
+
+## 转换为低容量类型以减少内存占用
+
+将i64->i16, f64->f32可以减少内存占用, 又不影响数据精度
+
+:::warning
+
+请确保转换后的数据类型可以容纳数据, 否则Polars会报错
+
+:::
+
+```python
+print(f"类型转换之前内存占用: {df.estimated_size()} bytes")
+
+result = df.with_columns(
+    pl.col("integers").cast(pl.Int16),
+    pl.col("floats").cast(pl.Float32),
+)
+print(result)
+print(f"类型转换之后内存占用: {result.estimated_size()} bytes")
+```
+
+```text
+类型转换之前内存占用: 72 bytes
+shape: (3, 3)
+┌──────────┬──────────────┬────────┐
+│ integers ┆ big_integers ┆ floats │
+│ ---      ┆ ---          ┆ ---    │
+│ i16      ┆ i64          ┆ f32    │
+╞══════════╪══════════════╪════════╡
+│ 1        ┆ 10000002     ┆ 4.0    │
+│ 2        ┆ 2            ┆ 5.8    │
+│ 3        ┆ 30000003     ┆ -6.3   │
+└──────────┴──────────────┴────────┘
+类型转换之后内存占用: 42 bytes
+```
+## 转换时类型不匹配报错
+如果转换时数据类型不匹配, Polars会抛出异常, 比如下面的例子中big_integers列转换成i8时, i8类型显然无法容纳第一个值和第三个值
+
+:::tip
+
+自己在使用时, 可以先试用max函数看下最大值, 或者使用`try except`包裹处理错误
+
+:::
+```python
+from polars.exceptions import InvalidOperationError
+
+try:
+    result = df.select(pl.col("big_integers").cast(pl.Int8))
+    print(result)
+except InvalidOperationError as err:
+    print(err)
+```
+
+```text
+conversion from `i64` to `i8` failed in column 'big_integers' for 2 out of 3 values: [10000002, 30000003]
+```
+
+## 使用`strict=False`将溢出值转换为`null`
+
+下面的例子中将i64转换为i8, 第一个和第三个值显然会溢出, 使用`strict=False`可以将溢出值转换为null
+```python
+result = df.select(pl.col("big_integers").cast(pl.Int8, strict=False))
+print(result)
+```
+
+```text
+shape: (3, 1)
+┌──────────────┐
+│ big_integers │
+│ ---          │
+│ i8           │
+╞══════════════╡
+│ null         │
+│ 2            │
+│ null         │
+└──────────────┘
+```
+
+## 将字符串转换为数字数据类型
+
+表示数字的字符串可以通过强制类型转换转换为相应的数据类型, 反向转换也是可以的
+
+```python
+df = pl.DataFrame(
+    {
+        "integers_as_strings": ["1", "2", "3"],
+        "floats_as_strings": ["4.0", "5.8", "-6.3"],
+        "floats": [4.0, 5.8, -6.3],
+    }
+)
+
+result = df.select(
+    pl.col("integers_as_strings").cast(pl.Int32),
+    pl.col("floats_as_strings").cast(pl.Float64),
+    pl.col("floats").cast(pl.String),
+)
+print(result)
+
+```
+
+```text
+shape: (3, 3)
+┌─────────────────────┬───────────────────┬────────┐
+│ integers_as_strings ┆ floats_as_strings ┆ floats │
+│ ---                 ┆ ---               ┆ ---    │
+│ i32                 ┆ f64               ┆ str    │
+╞═════════════════════╪═══════════════════╪════════╡
+│ 1                   ┆ 4.0               ┆ 4.0    │
+│ 2                   ┆ 5.8               ┆ 5.8    │
+│ 3                   ┆ -6.3              ┆ -6.3   │
+└─────────────────────┴───────────────────┴────────┘
+```
+如果列包含非数字值或者格式错误, Polars会抛出错误并给出详细的错误信息, 可以设置`strict=False`绕过错误获取null值
+
+## 布尔类型转换
+
+- 数值转换为布尔类型时, 0转换为false, 非0转换为true
+- 布尔转换为数值类型时, true转换为1, false转换为0
+
+
+```python
+df = pl.DataFrame(
+    {
+        "integers": [-1, 0, 2, 3, 4],
+        "floats": [0.0, 1.0, 2.0, 3.0, 4.1],
+        "bools": [True, False, True, False, True],
+    }
+)
+
+result = df.select(
+    pl.col("integers").cast(pl.Boolean),
+    pl.col("floats").cast(pl.Boolean),
+    pl.col("bools").cast(pl.Int8),
+)
+print(result)
+```
+
+```text
+shape: (5, 3)
+┌──────────┬────────┬───────┐
+│ integers ┆ floats ┆ bools │
+│ ---      ┆ ---    ┆ ---   │
+│ bool     ┆ bool   ┆ i8    │
+╞══════════╪════════╪═══════╡
+│ true     ┆ false  ┆ 1     │
+│ false    ┆ true   ┆ 0     │
+│ true     ┆ true   ┆ 1     │
+│ true     ┆ true   ┆ 0     │
+│ true     ┆ true   ┆ 1     │
+└──────────┴────────┴───────┘
+```
+
+## 时间数据类型处理
+
+所有时间数据类型的数据在内部都表示为: 从参考时间(纪元)到现在所经过的时间单位数, Unix纪元: `1970 年 1 月 1 日 00:00:00 UTC`
+
+- `Date`: 存储自纪元以来的天数
+- `Datetime`: 存储自纪元以来的毫秒数(`ms`)
+- `Time`: 时间单位是纳秒(`ns`)
+
+Polars允许在数字类型和事件类型数据之间进行转换
+
+### 标准库datetime基本示例
+
+```python
+from datetime import date, datetime, time
+
+print(date(1970,1,1))
+print(datetime(1970,1,1,0,0,0))
+print(time(0,0,1))
+```
+
+```text
+1970-01-01
+1970-01-01 00:00:00
+00:00:01
+```
+
+### 时间转换为数字
+
+```python
+from datetime import date, datetime, time
+import polars as pl
+df = pl.DataFrame(
+    {
+        "date": [
+            date(1970, 1, 1),  # 转换之后是0, 因为是从这天开始计算的
+            date(1970, 1, 10),  # 转换之后是9, 10-1=9, 第九天
+        ],
+        "datetime": [
+            datetime(1970, 1, 1, 0, 0, 0),  # 转换之后是0
+            datetime(1970, 1, 1, 0, 1, 0),  # 纪元1分钟之后, 1分钟60秒, 一共是60_000毫秒, 60_000_000毫秒
+        ],
+        "time": [
+            time(0, 0, 0),  # time计算起点是每天的午夜零点, 转换之后是0
+            time(0, 0, 1),  # 1s之后, 一共是1_000_000_000纳秒
+        ],
+    }
+)
+print(df)
+result = df.select(
+    pl.col("date").cast(pl.Int64).alias("days_since_epoch"),
+    pl.col("datetime").cast(pl.Int64).alias("us_since_epoch"),
+    pl.col("time").cast(pl.Int64).alias("ns_since_midnight"),
+)
+print(result)
+```
+
+```text
+shape: (2, 3)
+┌────────────┬─────────────────────┬──────────┐
+│ date       ┆ datetime            ┆ time     │
+│ ---        ┆ ---                 ┆ ---      │
+│ date       ┆ datetime[μs]        ┆ time     │
+╞════════════╪═════════════════════╪══════════╡
+│ 1970-01-01 ┆ 1970-01-01 00:00:00 ┆ 00:00:00 │
+│ 1970-01-10 ┆ 1970-01-01 00:01:00 ┆ 00:00:01 │
+└────────────┴─────────────────────┴──────────┘
+shape: (2, 3)
+┌──────────────────┬────────────────┬───────────────────┐
+│ days_since_epoch ┆ us_since_epoch ┆ ns_since_midnight │
+│ ---              ┆ ---            ┆ ---               │
+│ i64              ┆ i64            ┆ i64               │
+╞══════════════════╪════════════════╪═══════════════════╡
+│ 0                ┆ 0              ┆ 0                 │
+│ 9                ┆ 60000000       ┆ 1000000000        │
+└──────────────────┴────────────────┴───────────────────┘
+```
+
+### 时间类型和字符串互转
+- 时间类型转换为字符串: `.str.to_string()`
+- 字符串转换为时间类型: `.str.to_datetime()`
+```python
+df = pl.DataFrame(
+    {
+        "date": [date(2022, 1, 1), date(2022, 1, 2)],
+        "string": ["2022-01-01", "2022-01-02"],
+        "time":[time(0,0,0), time(1,0,0)]
+    }
+)
+
+result = df.select(
+    pl.col("date").dt.to_string("%Y-%m-%d"),
+    pl.col("string").str.to_datetime("%Y-%m-%d"),
+    pl.col("time").dt.to_string("%H:%M:%S")
+)
+print(result)
+```
+
+```text
+shape: (2, 3)
+┌────────────┬─────────────────────┬──────────┐
+│ date       ┆ string              ┆ time     │
+│ ---        ┆ ---                 ┆ ---      │
+│ str        ┆ datetime[μs]        ┆ str      │
+╞════════════╪═════════════════════╪══════════╡
+│ 2022-01-01 ┆ 2022-01-01 00:00:00 ┆ 00:00:00 │
+│ 2022-01-02 ┆ 2022-01-02 00:00:00 ┆ 01:00:00 │
+└────────────┴─────────────────────┴──────────┘
+```
+
+:::tip
+
+`str.to_datetime`具有支持时区功能的其他选项, 更多信息可以参考官方[API文档](https://docs.pola.rs/api/python/stable/reference/expressions/api/polars.Expr.str.to_datetime.html#polars.Expr.str.to_datetime)
+
+:::

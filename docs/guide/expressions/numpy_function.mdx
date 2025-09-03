@@ -1,0 +1,36 @@
+# Numpy functioni
+
+Polars表达式支持Numpy `ufuncs`, 可以参阅文档, 查看所有[受支持的Numpy函数的列表](https://numpy.org/doc/stable/reference/ufuncs.html#available-ufuncs)
+
+这意味着如果Polars没有提供, 我们可以使用Numpy来做一些快速操作
+
+
+```python
+import polars as pl
+import numpy as np
+
+df = pl.DataFrame({"a": [1, 2, 3], "b": [4, 5, 6]})
+
+out = df.select(np.log(pl.all()).name.suffix("_log"))
+print(out)
+```
+```text
+shape: (3, 2)
+┌──────────┬──────────┐
+│ a_log    ┆ b_log    │
+│ ---      ┆ ---      │
+│ f64      ┆ f64      │
+╞══════════╪══════════╡
+│ 0.0      ┆ 1.386294 │
+│ 0.693147 ┆ 1.609438 │
+│ 1.098612 ┆ 1.791759 │
+└──────────┴──────────┘
+```
+
+## 互操作性
+
+Polars的Series支持Numpy通用`ufunc`和广义`ufunc`, 比如`np.exp`,`np.cos`,`np.div`等元素级函数, 而且几乎都是零开销的
+
+但是请记住, Polars使用单独的位掩码跟踪缺失值, 而NumPy不会接收此信息.
+这可能会导致窗口函数或`np.convolve`给出有缺陷或不完整的结果. 因此, 如果将包含缺失数据的序列传递给通用`ufunc`则会引发错误.
+使用函数`to_numpy`将Polars序列转换为NumPy数组过程中,缺失值将被替换为`np.nan`

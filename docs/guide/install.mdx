@@ -1,0 +1,61 @@
+与其它包一样, 安装`Polars`非常简单
+
+[官方文档](https://docs.pola.rs/user-guide/installation/)
+
+## 默认安装
+
+### 使用pip安装
+
+```shell
+pip install polars
+```
+### 使用uv安装
+
+```shell
+uv add polars
+```
+
+## 额外tag
+> 处理csv,excel等文件时需要额外的包, 例如`xlsx2csv`, `excel`等, 可以单独安装也可以在安装polars时一并安装
+> 比如: `uv add polars[excel]`
+
+```shell
+pip install 'polars[tag]'
+```
+
+```shell
+uv add 'polars[tag1,tag2,tag3]'
+# []: 以逗号分隔的数组
+```
+
+| Tag                                                          | Description                                    |
+|:-------------------------------------------------------------|:-----------------------------------------------|
+| all                                                          | 安装所有可选的依赖                                      |
+| gpu                                                          | 在NVIDIA GPU上运行                                 |
+| pandas                                                       | 与pandas互转换                                     |
+| numpy                                                        | 与numpy互相操作                                     |
+| pyarrow                                                      | 与pyarrow互相操作                                   |
+| pydantic                                                     | 将数据从Pydantic模型转换至polars                        |
+| calamine                                                     | 使用calamine引擎从excel文件中读取                        |
+| openpyxl                                                     | 使用openpyxl引擎从excel文件中读取                        |
+| xlsx2csv                                                     | 使用xlsx2csv 引擎从excel文件中读取                       |
+| xlsxwriter                                                   | 使用XlsxWriter引擎将数据写入excel文件                     |
+| <span style={{"background-color": "yellow"}}>excel</span>    | 安装所有支持的excel引擎                                 |
+| adbc                                                         | 使用Arrow Database Connectivity(ADBC) 引擎从数据库读写数据 |
+| connectorx                                                   | 使用ConnectorX引擎从数据库读数据                          |
+| sqlalchemy                                                   | 使用SQLAlchemy引擎将数据写入数据库                         |
+| <span style={{"background-color": "yellow"}}>database</span> | 安装所有受支持的数据库引擎                                  |
+| fsspec                                                       | 从远程文件系统读写数据                                    |
+| deltalake                                                    | 从Delta 表格读写数据                                  |
+| iceberg                                                      | 从Apache Iceberg 表格读取数据                         |
+| async                                                        | 异步采集lazyFrames                                 |
+| cloudpickle                                                  | 序列化用户自定义函数                                     |
+| graph                                                        | 可视化`LazyFrames`                                |
+| plot                                                         | 使用plot绘制`DataFrame`                            |
+| style                                                        | 通过style命名空间设置`DataFrame`的样式                    |
+| timezone                                                     | 时区支持                                           |
+
+
+:::tip
+[GPU支持](https://docs.pola.rs/user-guide/gpu-support/) 请参与链接
+:::

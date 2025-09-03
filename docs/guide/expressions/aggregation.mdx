@@ -1,0 +1,266 @@
+# 聚合
+
+Polars的`group_by`上下文允许将表达式应用于列的子集, 这些子集由数据分组列的唯一值定义. 本章节讨论下如何使用聚合操作
+
+## 数据准备
+> 下面的数据由豆包生成
+
+```python
+import polars as pl
+
+df: pl.DataFrame = pl.DataFrame(
+    {
+        'name': ['Alice', 'Bob', 'Charlie', 'David', 'Eve'],
+        'age': [25, 30, 35, 25, 30],
+        'score': [85, 90, 75, 85, 95],
+        'group': ['A', 'B', 'A', 'B', 'A']
+    }
+)
+print(df)
+```
+
+```text
+shape: (5, 4)
+┌─────────┬─────┬───────┬───────┐
+│ name    ┆ age ┆ score ┆ group │
+│ ---     ┆ --- ┆ ---   ┆ ---   │
+│ str     ┆ i64 ┆ i64   ┆ str   │
+╞═════════╪═════╪═══════╪═══════╡
+│ Alice   ┆ 25  ┆ 85    ┆ A     │
+│ Bob     ┆ 30  ┆ 90    ┆ B     │
+│ Charlie ┆ 35  ┆ 75    ┆ A     │
+│ David   ┆ 25  ┆ 85    ┆ B     │
+│ Eve     ┆ 30  ┆ 95    ┆ A     │
+└─────────┴─────┴───────┴───────┘
+```
+
+## 基本聚合
+我们可以轻松地将多个表达式应用于聚合, 只需要在函数`agg()`中列出所需的所有表达式即可.聚合操作的数据量没有上限, 可以任意组合
+我们按照`group`这一列进行分组, 可以看到分为了下面两组
+
+```text
+shape: (3, 4)
+┌─────────┬─────┬───────┬───────┐
+│ name    ┆ age ┆ score ┆ group │
+│ ---     ┆ --- ┆ ---   ┆ ---   │
+│ str     ┆ i64 ┆ i64   ┆ str   │
+╞═════════╪═════╪═══════╪═══════╡
+│ Alice   ┆ 25  ┆ 85    ┆ A     │
+│ Charlie ┆ 35  ┆ 75    ┆ A     │
+│ Eve     ┆ 30  ┆ 95    ┆ A     │
+└─────────┴─────┴───────┴───────┘
+```
+```text
+shape: (2, 4)
+┌───────┬─────┬───────┬───────┐
+│ name  ┆ age ┆ score ┆ group │
+│ ---   ┆ --- ┆ ---   ┆ ---   │
+│ str   ┆ i64 ┆ i64   ┆ str   │
+╞═══════╪═════╪═══════╪═══════╡
+│ Bob   ┆ 30  ┆ 90    ┆ B     │
+│ David ┆ 25  ┆ 85    ┆ B     │
+└───────┴─────┴───────┴───────┘
+```
+
+我们来对分组做以下操作
+
+1. 获取每组的行数
+2. 获取年龄和分数这一列的最大值
+3. 将`name`这一列组合成一个列表
+
+```python
+res = (df.group_by("group")
+    .agg(
+        pl.len(),       # 计算每个分组的行数
+        pl.col("name"), # 将每个分组的name列组合成一个列表
+        pl.max("age").alias("max_age")  # 获取每个分组的年龄最大值
+    )
+)
+print(res)
+```
+
+```text
+shape: (2, 4)
+┌───────┬─────┬─────────────────────────────┬─────────┐
+│ group ┆ len ┆ name                        ┆ max_age │
+│ ---   ┆ --- ┆ ---                         ┆ ---     │
+│ str   ┆ u32 ┆ list[str]                   ┆ i64     │
+╞═══════╪═════╪═════════════════════════════╪═════════╡
+│ A     ┆ 3   ┆ ["Alice", "Charlie", "Eve"] ┆ 35      │
+│ B     ┆ 2   ┆ ["Bob", "David"]            ┆ 30      │
+└───────┴─────┴─────────────────────────────┴─────────┘
+```
+
+## 条件语句
+
+我们可以在聚合中使用条件语句直接查询, 比如我们想知道每个组有多少人分数>80和分数>90的
+```python
+res = (
+    df.group_by("group").agg(
+        (pl.col("score") > 80).sum().alias("sum_lt_80"),
+        (pl.col("score") > 90).sum().alias("sum_lt_90")
+    )
+)
+print(res)
+```
+
+```text
+shape: (2, 3)
+┌───────┬───────────┬───────────┐
+│ group ┆ sum_lt_80 ┆ sum_lt_90 │
+│ ---   ┆ ---       ┆ ---       │
+│ str   ┆ u32       ┆ u32       │
+╞═══════╪═══════════╪═══════════╡
+│ A     ┆ 2         ┆ 1         │
+│ B     ┆ 2         ┆ 0         │
+└───────┴───────────┴───────────┘
+```
+
+## 过滤
+我们可以对组进行过滤, 比如想计算每个组的平均值, 但不想包含该组的所有值, 又不想真正过滤`DataFrame`中的行, 因为我们需要这些行进行其他聚合
+
+`agg()`中的每个表达式过滤时是互不影响的, 下面代码计算每个组的总分数和满足`age>=30`的分数
+
+```python
+# 构建查询
+res = (
+    df
+    .group_by("group")  # 按group列分组
+    .agg(
+        (pl.col("score").filter(pl.col("age")>=30)).sum().alias("sum(age>=30)"),
+        pl.col("score").sum().alias("sum()")
+    )
+)
+print(result)
+```
+
+```text
+shape: (2, 3)
+┌───────┬──────────────┬───────┐
+│ group ┆ sum(age>=30) ┆ sum() │
+│ ---   ┆ ---          ┆ ---   │
+│ str   ┆ i64          ┆ i64   │
+╞═══════╪══════════════╪═══════╡
+│ B     ┆ 90           ┆ 170   │
+│ A     ┆ 170          ┆ 255   │
+└───────┴──────────────┴───────┘
+```
+
+## 嵌套分组
+我们可以将`group`和`age`作为组合键进行分组, 统计每组的平均分数和人数, 意思是`group`和`age`相同的行被归为一组
+```python {12}
+import polars as pl
+# 这里一共6行数据, group为A的4行中, 有2行的age都是25, 便于观察
+df: pl.DataFrame = pl.DataFrame(
+    {
+        'name': ['Alice', 'Bob', 'Charlie', 'David', 'Eve','John'],
+        'age': [25, 30, 35, 25, 30, 25],
+        'score': [85, 90, 75, 85, 95, 100],
+        'group': ['A', 'B', 'A', 'B', 'A','A']
+    }
+)
+result = (df
+          .group_by(["group", "age"])
+          .agg([
+                pl.col("score").mean().alias("avg_score"),
+                pl.len().alias("count")
+          ]).sort(["group", "age"])
+)
+
+print(result)
+```
+注意到有两个('A',25),分数分别是85和100, 所以平均值是92.5
+```text
+shape: (5, 4)
+┌───────┬─────┬───────────┬───────┐
+│ group ┆ age ┆ avg_score ┆ count │
+│ ---   ┆ --- ┆ ---       ┆ ---   │
+│ str   ┆ i64 ┆ f64       ┆ u32   │
+╞═══════╪═════╪═══════════╪═══════╡
+│ A     ┆ 25  ┆ 92.5      ┆ 2     │
+│ A     ┆ 30  ┆ 95.0      ┆ 1     │
+│ A     ┆ 35  ┆ 75.0      ┆ 1     │
+│ B     ┆ 25  ┆ 85.0      ┆ 1     │
+│ B     ┆ 30  ┆ 90.0      ┆ 1     │
+└───────┴─────┴───────────┴───────┘
+```
+
+## 排序
+使用排序非常简单, 我们可以先排序然后分组, 最后聚合得到我们想要的结果
+
+下面代码获取每组分数最高的人以及分数, 在代码中`pl.col("name").first()`是根据排序后的结果来计算的, 也就是说排序的结果会影响后续聚合的行为
+```python {12}
+import polars as pl
+
+df: pl.DataFrame = pl.DataFrame(
+    {
+        'name': ['Alice', 'Bob', 'Charlie', 'David', 'Eve','John'],
+        'age': [25, 30, 35, 25, 30, 25],
+        'score': [85, 90, 75, 85, 95, 100],
+        'group': ['A', 'B', 'A', 'B', 'A','A']
+    }
+)
+res = (df
+    .sort("score",descending=True)
+    .group_by("group").agg(
+        pl.col("name").first().alias("top_name"),
+        pl.col("score").first().alias("top_score")
+    )
+)
+print(res)
+```
+
+```text
+shape: (2, 3)
+┌───────┬──────────┬───────────┐
+│ group ┆ top_name ┆ top_score │
+│ ---   ┆ ---      ┆ ---       │
+│ str   ┆ str      ┆ i64       │
+╞═══════╪══════════╪═══════════╡
+│ A     ┆ John     ┆ 100       │
+│ B     ┆ Bob      ┆ 90        │
+└───────┴──────────┴───────────┘
+```
+`sort`会对整体进行排序, 并影响分组后的聚合行为, 然后我们还可以在分组内重新排序, 以实现更灵活的需求
+
+```python {16,17}
+df: pl.DataFrame = pl.DataFrame(
+    {
+        'name': ['Alice', 'Bob', 'Charlie', 'David', 'Eve','John'],
+        'age': [25, 40, 35, 25, 30, 25],
+        'score': [85, 90, 75, 85, 95, 100],
+        'group': ['A', 'B', 'A', 'B', 'A','A']
+    }
+)
+q = (
+    df.lazy()
+      .sort("score", descending=True)  # 按成绩降序排，最高分靠前
+      .group_by("group")
+      .agg([
+          pl.col("name").first().alias("top_scorer"),             # 最高分的人名
+          pl.col("score").first().alias("top_score"),             # 最高分
+          pl.col("name").sort().first().alias("alphabetical_first"),  # 字典序最小的名字
+          pl.col("age").sort_by(pl.col("name")).first().alias("age_of_alphabetical_first"),  # 按名字排序后，第一个人的年龄
+      ])
+      .sort("group")
+)
+
+df_result = q.collect()
+print(df_result)
+```
+
+```text
+shape: (2, 5)
+┌───────┬────────────┬───────────┬────────────────────┬───────────────────────────┐
+│ group ┆ top_scorer ┆ top_score ┆ alphabetical_first ┆ age_of_alphabetical_first │
+│ ---   ┆ ---        ┆ ---       ┆ ---                ┆ ---                       │
+│ str   ┆ str        ┆ i64       ┆ str                ┆ i64                       │
+╞═══════╪════════════╪═══════════╪════════════════════╪═══════════════════════════╡
+│ A     ┆ John       ┆ 100       ┆ Alice              ┆ 25                        │
+│ B     ┆ Bob        ┆ 90        ┆ Bob                ┆ 40                        │
+└───────┴────────────┴───────────┴────────────────────┴───────────────────────────┘
+```
+
+## 不要扼杀并行
+
+在Polars中, 请尽量避免使用`lambda`函数以及自定义Python函数, 相反多使用Polars提供的API

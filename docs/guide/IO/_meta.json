@@ -1,0 +1,12 @@
+[
+  {
+    "type": "file",
+    "name": "csv.mdx",
+    "label": "csv"
+  },
+  {
+    "type": "file",
+    "name": "excel.mdx",
+    "label": "excel"
+  }
+]
