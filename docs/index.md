@@ -2,7 +2,7 @@
 pageType: home
 
 hero:
-  name: 脚本之家
+  name: 脚本库
   text: 脚本工具集合
   tagline: 一个即拿即用的脚本库
   actions:

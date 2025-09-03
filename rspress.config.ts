@@ -4,10 +4,10 @@ import {defineConfig} from 'rspress/config';
 export default defineConfig({
   root: 'docs',
   // root: path.join(__dirname, 'docs'),
-  title: '脚本之家',
+  title: '脚本库',
   description:"脚本工具集合",
   icon: './docs/public/rspress-logo.png',
-  logoText:"脚本之家",
+  logoText:"脚本库",
   logo: {
     light: '/rspress-logo.png',
     dark: '/rspress-logo.png',
