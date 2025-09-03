@@ -2,16 +2,16 @@
 pageType: home
 
 hero:
-  name: Polars-Python中文指南
-  text: 新时代的DataFrame
-  tagline: Polars是一个用于数据处理的开源库
+  name: 脚本之家
+  text: 脚本工具集合
+  tagline: 一个即拿即用的脚本库
   actions:
     - theme: brand
       text: 快速开始
       link: /guide/
     - theme: alt
       text: GitHub
-      link: https://github.com/pola-rs/polars
+      link: https://github.com/HEEKDragonOne/script-home
   image:
     src: /polars_logo_blue.png
     alt: Logo

@@ -4,10 +4,10 @@ import {defineConfig} from 'rspress/config';
 export default defineConfig({
   root: 'docs',
   // root: path.join(__dirname, 'docs'),
-  title: 'Polars中文指南',
-  description:"polars-python中文指南",
+  title: '脚本之家',
+  description:"脚本工具集合",
   icon: './docs/public/polars.svg',
-  logoText:"Polars中文指南",
+  logoText:"脚本之家",
   logo: {
     light: '/polars.svg',
     dark: '/polars.svg',
