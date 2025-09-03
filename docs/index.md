@@ -13,7 +13,7 @@ hero:
       text: GitHub
       link: https://github.com/HEEKDragonOne/script-home
   image:
-    src: /polars_logo_blue.png
+    src: /rspress-logo.webp
     alt: Logo
 features:
   - title: Rust编写、超高性能

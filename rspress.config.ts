@@ -6,11 +6,11 @@ export default defineConfig({
   // root: path.join(__dirname, 'docs'),
   title: '脚本之家',
   description:"脚本工具集合",
-  icon: './docs/public/polars.svg',
+  icon: './docs/public/rspress-logo.png',
   logoText:"脚本之家",
   logo: {
-    light: '/polars.svg',
-    dark: '/polars.svg',
+    light: '/rspress-logo.png',
+    dark: '/rspress-logo.png',
   },
   route: {
     cleanUrls: false,
